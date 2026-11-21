@@ -99,6 +99,7 @@ export default function SystemDetail() {
   // #59: the same gaps as the "Gap" filter of the risk overview (risks without use case) plus
   // the gaps of linked use cases and open detection requests
   const todoRequests = s.gap_requests.filter((g) => isTodo(g.status));
+  const lastDone = [...s.interviews].filter((i) => i.status !== "draft").sort((x, y) => y.id - x.id)[0];
   const gapCount = uncovered.length + s.gap_no_rules.length + blind.length + todoRequests.length;
 
   return (
@@ -145,111 +146,42 @@ export default function SystemDetail() {
         </p>
       )}
 
-      {s.last_interview && (
-        <RiskCoverage
-          risks={s.risks}
-          components={s.components}
-          showWeight
-          title={t("Risks and use cases")}
-          actions={
-            <span className="small muted">
-              {t("From the interview of {date}; use case state as of now.", { date: fmtDate(s.last_interview) })}
-            </span>
-          }
-        />
-      )}
-
-      <div className="split">
-        <section className="card split-side stack-sm" aria-labelledby="ownh">
-          <h2 id="ownh" className="h-sm">
-            {t("System and owner")}
-          </h2>
-          {s.description && <p className="ink-2" style={{ margin: 0 }}>{s.description}</p>}
-          <dl className="facts">
-            {facts.map(([k, v]) => (
-              <div key={k} style={{ display: "contents" }}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-
-        <section className="card split-main" aria-labelledby="covh">
-          <div className="section-head">
-            <h2 id="covh">{t("Linked use cases")}</h2>
-            {s.links.length > 0 && (
-              <Link className="btn btn-sm" to={`/usecases?sys=${s.id}&view=table`}>
-                {t("Show on Use cases")}
-              </Link>
-            )}
+      <section className="card stack-sm" aria-labelledby="stath">
+        <h2 id="stath" className="sr-only">
+          {t("Status")}
+        </h2>
+        <dl className="stat-grid">
+          <div>
+            <dt>{t("Detection coverage")}</dt>
+            <dd>{s.last_interview ? pct(s.coverage) : "–"}</dd>
           </div>
-          <dl className="stat-grid">
-            <div>
-              <dt>{t("Detection coverage")}</dt>
-              <dd>{pct(s.coverage)}</dd>
-            </div>
-            <div>
-              <dt>{t("Linked use cases")}</dt>
-              <dd>{s.links.length}</dd>
-            </div>
-            <div>
-              <dt>{t("Gaps")}</dt>
-              <dd>{gapCount}</dd>
-            </div>
-          </dl>
-          <p className="muted small" style={{ margin: 0 }}>
-            {t("Coverage = average weight of the linked L2 use cases and L3 rules; use cases without scored rules count as 0.")}
-          </p>
-          {s.links.length ? (
-            <div className="scroll-x">
-              <table className="table table-plain">
-                <thead>
-                  <tr>
-                    <th>{t("Use case")}</th>
-                    <th>{t("From threats")}</th>
-                    <th className="num">{t("Risk score")}</th>
-                    <th className="num">{t("Weight")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.links.map((l) => (
-                    <tr key={`${l.level}-${l.l3_id ?? l.l2_id}`}>
-                      <td>
-                        <div className="code-link-row">
-                          <span className={`lvl lvl-${l.level}`}>{l.level}</span>
-                          <Link className="code-link" to={useCaseHref(l)}>
-                            <span className="code-tag">{l.code}</span>
-                            <span>{l.name}</span>
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="small">
-                        {l.sources.map((x) => `${x.component}: ${threatLabel(x.category)}`).join("; ")}
-                      </td>
-                      <td className="num">
-                        <span className={`risk risk-${l.risk_level ?? 0}`} title={t("Risk level {r}", { r: l.risk_level ?? "–" })}>
-                          {l.risk_score || "–"}
-                        </span>
-                      </td>
-                      <td className="num">{num(l.weight)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="note-box">
-              {t("No use cases are linked yet. They are linked when an interview is completed.")}{" "}
-              {editor && !s.archived && (
-                <button type="button" className="link-btn" onClick={() => void startInterview()}>
-                  {s.draft_id ? t("Continue draft") : t("Start interview")}
-                </button>
+          <div>
+            <dt>{t("Linked use cases")}</dt>
+            <dd>{s.links.length}</dd>
+          </div>
+          <div>
+            <dt>{t("Gaps")}</dt>
+            <dd>{s.last_interview ? <a href="#gaph">{gapCount}</a> : "–"}</dd>
+          </div>
+          <div>
+            <dt>{t("Open requests")}</dt>
+            <dd>{todoRequests.length ? <a href="#sys-requests">{todoRequests.length}</a> : 0}</dd>
+          </div>
+          <div>
+            <dt>{t("Owner confirmation")}</dt>
+            <dd className="stat-text">
+              {lastDone ? (
+                <Link to={`/interviews/${lastDone.id}`}>{INTERVIEW_STATUS_LABEL[lastDone.status]}</Link>
+              ) : (
+                <span className="muted">{t("No interview yet.")}</span>
               )}
-            </div>
-          )}
-        </section>
-      </div>
+            </dd>
+          </div>
+        </dl>
+        <p className="muted small" style={{ margin: 0 }}>
+          {t("Coverage = average weight of the linked L2 use cases and L3 rules; use cases without scored rules count as 0.")}
+        </p>
+      </section>
 
       <section className="card stack-sm" aria-labelledby="gaph">
         <h2 id="gaph" className="h-sm">
@@ -265,7 +197,11 @@ export default function SystemDetail() {
             </span>
           )}
         </h2>
-        {!gapCount && <p className="muted" style={{ margin: 0 }}>{t("No gaps.")}</p>}
+        {!gapCount && (
+          <p className="muted" style={{ margin: 0 }}>
+            {s.last_interview ? t("No gaps.") : t("Not assessed yet: there is no completed interview.")}
+          </p>
+        )}
         {uncovered.length > 0 && (
           <div>
             <h3 className="small strong">{t("Risks that no use case addresses")}</h3>
@@ -309,7 +245,7 @@ export default function SystemDetail() {
           </details>
         )}
         {s.gap_requests.length > 0 && (
-          <div>
+          <div id="sys-requests">
             <div className="section-head">
               <h3 className="small strong">{t("Detection requests")}</h3>
               <Link className="small" to={`/usecases/requests?system=${sid}`}>
@@ -399,6 +335,109 @@ export default function SystemDetail() {
           <p className="muted empty-flat">{t("No interview yet.")}</p>
         )}
       </section>
+
+      {s.last_interview && (
+        <details className="fold">
+          <summary>
+            {t("Risks and use cases")} <span className="muted small">({t("{n} risks", { n: s.risks.length })})</span>
+          </summary>
+        <RiskCoverage
+          risks={s.risks}
+          components={s.components}
+          showWeight
+          title={t("Risks and use cases")}
+          actions={
+            <span className="small muted">
+              {t("From the interview of {date}; use case state as of now.", { date: fmtDate(s.last_interview) })}
+            </span>
+          }
+        />
+        </details>
+      )}
+
+      <details className="fold">
+        <summary>
+          {t("System and linked use cases")} <span className="muted small">({t("{n} use cases", { n: s.links.length })})</span>
+        </summary>
+      <div className="split">
+        <section className="card split-side stack-sm" aria-labelledby="ownh">
+          <h2 id="ownh" className="h-sm">
+            {t("System and owner")}
+          </h2>
+          {s.description && <p className="ink-2" style={{ margin: 0 }}>{s.description}</p>}
+          <dl className="facts">
+            {facts.map(([k, v]) => (
+              <div key={k} style={{ display: "contents" }}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section className="card split-main" aria-labelledby="covh">
+          <div className="section-head">
+            <h2 id="covh">{t("Linked use cases")}</h2>
+            {s.links.length > 0 && (
+              <Link className="btn btn-sm" to={`/usecases?sys=${s.id}&view=table`}>
+                {t("Show on Use cases")}
+              </Link>
+            )}
+          </div>
+          <p className="muted small" style={{ margin: 0 }}>
+            {t("Coverage = average weight of the linked L2 use cases and L3 rules; use cases without scored rules count as 0.")}
+          </p>
+          {s.links.length ? (
+            <div className="scroll-x">
+              <table className="table table-plain">
+                <thead>
+                  <tr>
+                    <th>{t("Use case")}</th>
+                    <th>{t("From threats")}</th>
+                    <th className="num">{t("Risk score")}</th>
+                    <th className="num">{t("Weight")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.links.map((l) => (
+                    <tr key={`${l.level}-${l.l3_id ?? l.l2_id}`}>
+                      <td>
+                        <div className="code-link-row">
+                          <span className={`lvl lvl-${l.level}`}>{l.level}</span>
+                          <Link className="code-link" to={useCaseHref(l)}>
+                            <span className="code-tag">{l.code}</span>
+                            <span>{l.name}</span>
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="small">
+                        {l.sources.map((x) => `${x.component}: ${threatLabel(x.category)}`).join("; ")}
+                      </td>
+                      <td className="num">
+                        <span className={`risk risk-${l.risk_level ?? 0}`} title={t("Risk level {r}", { r: l.risk_level ?? "–" })}>
+                          {l.risk_score || "–"}
+                        </span>
+                      </td>
+                      <td className="num">{num(l.weight)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="note-box">
+              {t("No use cases are linked yet. They are linked when an interview is completed.")}{" "}
+              {editor && !s.archived && (
+                <button type="button" className="link-btn" onClick={() => void startInterview()}>
+                  {s.draft_id ? t("Continue draft") : t("Start interview")}
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+
+      </details>
 
       {editing && (
         <SystemDialog
