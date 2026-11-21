@@ -119,7 +119,11 @@ export function Modal({
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
+    if (open && !d.open) {
+      d.showModal();
+      // the first field gets the focus, not the close button
+      d.querySelector<HTMLElement>("input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])")?.focus();
+    }
     if (!open && d.open) d.close();
   }, [open]);
   // Rendered into <body>: a dialog opened from inside a page <form> (the rule editor) would otherwise
@@ -176,6 +180,30 @@ export function MultiSelect({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [find, setFind] = useState("");
+  const box = useRef<HTMLDetailsElement>(null);
+  // Escape or a click outside closes the list; Escape returns to the summary
+  useEffect(() => {
+    const d = box.current;
+    if (!d) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && d.open) {
+        d.open = false;
+        d.querySelector("summary")?.focus();
+        e.stopPropagation();
+      }
+    };
+    const onDown = (e: MouseEvent) => {
+      if (d.open && !d.contains(e.target as Node)) d.open = false;
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, []);
+  const shown = find.trim() ? options.filter((o) => o.label.toLowerCase().includes(find.trim().toLowerCase())) : options;
 
   async function create() {
     const name = draft.trim();
@@ -203,7 +231,7 @@ export function MultiSelect({
   return (
     <div className="field">
       <span id={id}>{label}</span>
-      <details className="multi">
+      <details className="multi" ref={box}>
         <summary className={"input multi-summary" + (disabled ? " is-disabled" : "")} aria-labelledby={id}>
           {chosen.length ? (
             <span className="chips">
@@ -219,10 +247,20 @@ export function MultiSelect({
         </summary>
         {!disabled && (
           <fieldset className="multi-list" aria-labelledby={id}>
-            {[...new Set(options.map((o) => o.group ?? ""))].map((g) => (
+            {options.length > 8 && (
+              <input
+                className="input input-sm"
+                type="search"
+                value={find}
+                placeholder={t("Search…")}
+                aria-label={t("Search in {list}", { list: label })}
+                onChange={(e) => setFind(e.target.value)}
+              />
+            )}
+            {[...new Set(shown.map((o) => o.group ?? ""))].map((g) => (
               <div key={g} className="multi-group" role="group" aria-label={g || undefined}>
                 {g && <span className="multi-group-head">{g}</span>}
-                {options
+                {shown
                   .filter((o) => (o.group ?? "") === g)
                   .map((o) => (
                     <label key={o.value}>

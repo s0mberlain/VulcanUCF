@@ -284,7 +284,11 @@ export function RiskCoverage({
                   </ul>
                 ) : (
                   <p className="small muted" style={{ margin: 0 }}>
-                    {r.above_threshold ? t("No use case addresses this risk.") : t("No use case chosen (below the threshold).")}
+                    {r.coverage === "unrated"
+                      ? t("Not rated yet: add likelihood and impact in step 2.")
+                      : r.above_threshold
+                        ? t("No use case addresses this risk.")
+                        : t("No use case chosen (below the threshold).")}
                   </p>
                 )}
                 {r.requests.length > 0 && (

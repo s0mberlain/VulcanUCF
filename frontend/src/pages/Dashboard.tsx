@@ -115,8 +115,8 @@ function Attention({
 }) {
   const items = [
     { n: overdue, label: t("rules never verified or overdue"), to: "/verification", action: t("Verify") },
-    { n: requests, label: t("open detection requests"), to: "/usecases/requests", action: t("Show requests") },
-    { n: gaps, label: t("uncovered risks in systems"), to: "/systems", action: t("Show systems") },
+    { n: requests, label: t("open or in-progress detection requests"), to: "/usecases/requests", action: t("Show requests") },
+    { n: gaps, label: t("gaps in systems"), to: "/systems", action: t("Show systems") },
     { n: interviews, label: t("interviews due"), to: "/systems?due=1", action: t("Show systems") },
   ].filter((x) => x.n);
   return (

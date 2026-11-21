@@ -13,16 +13,21 @@ export function num(v: number | null | undefined, digits = 2): string {
 
 const DATE_FMT = new Intl.DateTimeFormat(locale(), { year: "numeric", month: "short", day: "numeric" });
 
+/** The server stores UTC; SQLite hands datetimes back without a zone mark, so a bare time counts as UTC. */
+export function asUtc(iso: string): string {
+  return iso.includes("T") && !/(Z|[+-]\d\d:?\d\d)$/i.test(iso) ? iso + "Z" : iso;
+}
+
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "–";
-  const d = new Date(iso.length === 10 ? iso + "T00:00:00" : iso);
+  const d = new Date(iso.length === 10 ? iso + "T00:00:00" : asUtc(iso));
   return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
 }
 
 /** Date and time, e.g. "14 Nov 2026 09:05"; null → "never". */
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return t("never");
-  const d = new Date(iso);
+  const d = new Date(asUtc(iso));
   return `${fmtDate(iso)} ${d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}`;
 }
 
