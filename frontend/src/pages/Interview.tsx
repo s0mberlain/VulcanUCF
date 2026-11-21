@@ -44,6 +44,9 @@ type FormComponent = Form["components"][number];
 type FormThreat = FormComponent["threats"][number];
 
 const RATINGS = [1, 2, 3, 4, 5];
+/** The scales said in words, so "4" means the same to everyone in the room. */
+const LIKELIHOOD_LABEL = [t("rare"), t("unlikely"), t("possible"), t("likely"), t("almost certain")];
+const IMPACT_LABEL = [t("minor"), t("limited"), t("moderate"), t("major"), t("severe")];
 
 function newKey(): string {
   return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -927,6 +930,7 @@ function StepComponents({
   const techniques = useLoad(() => api.attackTechniques());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [touched, setTouched] = useState<Set<string>>(new Set());
+  const [describing, setDescribing] = useState<Set<string>>(new Set());
   const [extraRefs, setExtraRefs] = useState<RefItem[]>([]);
   const options = [...(refs.data ?? []), ...extraRefs]
     .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
@@ -1037,11 +1041,11 @@ function StepComponents({
   return (
     <div className="stack">
       <ErrorNote error={refs.error} />
-      {!form.components.length && (
-        <div className="note-box">
-          {t("Split the system into a few components (e.g. web front end, API, database, admin access) and go through the six STRIDE categories for each.")}
-        </div>
-      )}
+      <p className="muted small" style={{ margin: 0 }}>
+        {form.components.length
+          ? t("For each STRIDE category decide: does the threat apply? Only threats that apply are rated and propose use cases.")
+          : t("Split the system into a few components (e.g. web front end, API, database, admin access). For each STRIDE category decide: does the threat apply? Only threats that apply are rated and propose use cases.")}
+      </p>
       {form.components.map((c, idx) => {
         const open = !collapsed.has(c.key);
         const dup = dupNames.has(c.name.trim().toLowerCase());
@@ -1080,7 +1084,7 @@ function StepComponents({
               <span className="grow" />
               {!readOnly && (
                 <button type="button" className="btn btn-sm" onClick={() => void removeComp(c)}>
-                  {t("Remove")}
+                  {t("Remove component")}
                 </button>
               )}
             </div>
@@ -1103,7 +1107,8 @@ function StepComponents({
                     {nameBad && !dup && <span className="field-error">{t("Required")}</span>}
                   </label>
                   <MultiSelect
-                    label={t("Log sources the component delivers")}
+                    label={t("Log sources of this component")}
+                    hint={t("Which logs does it send to the SIEM? Use cases are checked against them.")}
                     options={options}
                     value={c.log_source_ids.map(String)}
                     disabled={readOnly}
@@ -1115,17 +1120,36 @@ function StepComponents({
                     }}
                   />
                 </div>
-                <label className="field">
-                  {t("Description")}
-                  <textarea
-                    className="input textarea"
-                    rows={2}
-                    maxLength={10000}
-                    value={c.description}
-                    disabled={readOnly}
-                    onChange={(e) => setComp(c.key, { description: e.target.value })}
-                  />
-                </label>
+                {c.description || describing.has(c.key) ? (
+                  <label className="field">
+                    {t("Description (optional)")}
+                    <textarea
+                      id={`comp-desc-${c.key}`}
+                      className="input textarea"
+                      rows={2}
+                      maxLength={10000}
+                      value={c.description}
+                      disabled={readOnly}
+                      placeholder={t("What it does and who uses it")}
+                      onChange={(e) => setComp(c.key, { description: e.target.value })}
+                    />
+                  </label>
+                ) : (
+                  !readOnly && (
+                    <div>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => {
+                          setDescribing((x) => new Set(x).add(c.key));
+                          requestAnimationFrame(() => document.getElementById(`comp-desc-${c.key}`)?.focus());
+                        }}
+                      >
+                        {t("+ Add a description")}
+                      </button>
+                    </div>
+                  )
+                )}
                 <div className="iv-threats">
                   {STRIDE.map((cat) => {
                     const x = threatOf(c, cat);
@@ -1135,8 +1159,8 @@ function StepComponents({
                       <div key={cat} id={`thr-${c.key}-${cat}`} className={"iv-threat" + (inc ? " is-incomplete" : "") + (x.state === "not_discussed" ? " is-undecided" : "")}>
                         <div className="iv-threat-head">
                           <div>
-                            <strong>{STRIDE_LABEL[cat]}</strong>
-                            <div className="small muted">{STRIDE_HINT[cat]}</div>
+                            <strong title={STRIDE_HINT[cat]}>{STRIDE_LABEL[cat]}</strong>
+                            {x.state !== "does_not_apply" && <div className="small muted">{STRIDE_HINT[cat]}</div>}
                           </div>
                           <div
                             className="view-toggle"
@@ -1175,6 +1199,7 @@ function StepComponents({
                             <label className="field grow-2">
                               {t("Threat description")} *
                               <textarea
+                                placeholder={t("What could happen to this component, and how?")}
                                 className={"input textarea" + (inc && !x.description.trim() && showErrors ? " is-invalid" : "")}
                                 rows={2}
                                 maxLength={10000}
@@ -1196,7 +1221,7 @@ function StepComponents({
                                 <option value="">–</option>
                                 {RATINGS.map((n) => (
                                   <option key={n} value={n}>
-                                    {n}
+                                    {n} · {LIKELIHOOD_LABEL[n - 1]}
                                   </option>
                                 ))}
                               </select>
@@ -1214,20 +1239,28 @@ function StepComponents({
                                 <option value="">–</option>
                                 {RATINGS.map((n) => (
                                   <option key={n} value={n}>
-                                    {n}
+                                    {n} · {IMPACT_LABEL[n - 1]}
                                   </option>
                                 ))}
                               </select>
                             </label>
                             <div className="field">
-                              {t("Risk score")}
+                              <span title={t("Likelihood × impact")}>{t("Risk score")}</span>
                               <div className="iv-score" aria-live="polite">
                                 <RiskScore value={s} />
                               </div>
                             </div>
                             {inc && (
                               <span className="field-error iv-inc">
-                                {t("Incomplete: description, likelihood and impact are needed.")}
+                                {t("Still missing: {list}.", {
+                                  list: [
+                                    !x.description.trim() && t("description"),
+                                    !x.likelihood && t("likelihood"),
+                                    !x.impact && t("impact"),
+                                  ]
+                                    .filter(Boolean)
+                                    .join(", "),
+                                })}
                               </span>
                             )}
                           </div>
@@ -1252,7 +1285,7 @@ function StepComponents({
                     )}
                     <span className="grow" />
                     <button type="button" className="btn btn-sm" onClick={() => nextComp(c, idx)}>
-                      {idx < form.components.length - 1 ? t("Done, next component") : t("Done with this component")}
+                      {idx < form.components.length - 1 ? t("Collapse and go to the next component") : t("Collapse this component")}
                     </button>
                   </div>
                 )}
@@ -1264,7 +1297,7 @@ function StepComponents({
       {!readOnly && (
         <div>
           <button type="button" id="add-component" className="btn" onClick={addComp}>
-            {t("+ Component")}
+            {t("+ Add component")}
           </button>
         </div>
       )}
@@ -1304,12 +1337,12 @@ function CustomThreats({
         <div>
           <strong>{t("Further threats (MITRE ATT&CK)")}</strong>
           <div className="small muted">
-            {t("Optional: a detailed threat beyond STRIDE, linked to ATT&CK techniques. Use cases whose rules cover a technique are proposed.")}
+            {t("Optional. Use cases whose rules cover one of the techniques are proposed.")}
           </div>
         </div>
         {!readOnly && (
           <button type="button" className="btn btn-sm" onClick={add}>
-            {t("+ Custom threat")}
+            {t("+ Add ATT&CK threat")}
           </button>
         )}
       </div>
@@ -1340,7 +1373,7 @@ function CustomThreats({
                   <option value="">–</option>
                   {RATINGS.map((n) => (
                     <option key={n} value={n}>
-                      {n}
+                      {n} · {LIKELIHOOD_LABEL[n - 1]}
                     </option>
                   ))}
                 </select>
@@ -1356,7 +1389,7 @@ function CustomThreats({
                   <option value="">–</option>
                   {RATINGS.map((n) => (
                     <option key={n} value={n}>
-                      {n}
+                      {n} · {IMPACT_LABEL[n - 1]}
                     </option>
                   ))}
                 </select>

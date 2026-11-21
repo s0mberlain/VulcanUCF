@@ -163,8 +163,11 @@ export function MultiSelect({
   onChange,
   disabled,
   onCreate,
+  hint,
 }: {
   label: string;
+  /** one line under the field that answers "what is this for?" */
+  hint?: string;
   /** options with a `group` are listed under that heading (in the order the groups appear) */
   options: { value: string; label: string; group?: string }[];
   value: string[];
@@ -301,6 +304,7 @@ export function MultiSelect({
           </fieldset>
         )}
       </details>
+      {hint && <span className="small muted">{hint}</span>}
     </div>
   );
 }
