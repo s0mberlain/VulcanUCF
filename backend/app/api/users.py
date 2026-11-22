@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import delete, func, select
 
-from app import audit
+from app import audit, purple
 from app.api.deps import DB
-from app.models import AuthSource, Role, User, UserSession
+from app.models import AuthSource, Role, TestAttachment, TestCase, User, UserSession
 from app.schemas import UserCreate, UserOut, UserUpdate
 from app.security import Admin, check_password_policy, hash_password
 
@@ -23,9 +23,15 @@ def _active_admins(db) -> int:
     )
 
 
+def _shown(db, user: User) -> User:
+    """The account with the date its expiry applies now (red team accounts)."""
+    user.effective_expires_at = purple.account_expiry(user, db)  # type: ignore[attr-defined]
+    return user
+
+
 @router.get("", response_model=list[UserOut])
 def list_users(_: Admin, db: DB) -> list[User]:
-    return list(db.scalars(select(User).order_by(User.username)))
+    return [_shown(db, u) for u in db.scalars(select(User).order_by(User.username))]
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -33,6 +39,8 @@ def create_user(body: UserCreate, admin: Admin, db: DB) -> User:
     if db.scalar(select(User).where(User.username == body.username)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Username already exists")
     check_password_policy(body.password)
+    if body.role == Role.red_team and body.expires_at is None and not body.expiry_follows_campaign:
+        raise HTTPException(422, "A red team account needs an expiry date")
     user = User(
         username=body.username,
         display_name=body.display_name,
@@ -40,11 +48,25 @@ def create_user(body: UserCreate, admin: Admin, db: DB) -> User:
         role=body.role,
         auth_source=AuthSource.local,
         password_hash=hash_password(body.password),
+        expires_at=body.expires_at if body.role == Role.red_team else None,
+        expiry_follows_campaign=body.expiry_follows_campaign and body.role == Role.red_team,
     )
     db.add(user)
-    audit.record(db, admin, "create", "user", body.username, {"role": body.role})
+    audit.record(
+        db,
+        admin,
+        "create",
+        "user",
+        body.username,
+        {"role": body.role}
+        | (
+            {"expires_at": body.expires_at, "follows": body.expiry_follows_campaign}
+            if body.role == Role.red_team
+            else {}
+        ),
+    )
     db.commit()
-    return user
+    return _shown(db, user)
 
 
 @router.patch("/{user_id}", response_model=UserOut)
@@ -68,6 +90,15 @@ def update_user(user_id: int, body: UserUpdate, admin: Admin, db: DB) -> User:
     if user.role == Role.admin and user.active and demoting and _active_admins(db) <= 1:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cannot remove the last active admin")
 
+    new_role = data.get("role", user.role)
+    if new_role == Role.red_team and user.auth_source != AuthSource.local:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Only local accounts can be red team accounts"
+        )
+    if new_role == Role.red_team:
+        follows = data.get("expiry_follows_campaign", user.expiry_follows_campaign)
+        if not follows and data.get("expires_at", user.expires_at) is None:
+            raise HTTPException(422, "A red team account needs an expiry date")
     changes = {}
     if "password" in data:
         password = data.pop("password")
@@ -88,7 +119,7 @@ def update_user(user_id: int, body: UserUpdate, admin: Admin, db: DB) -> User:
         db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     audit.record(db, admin, "update", "user", user.username, changes)
     db.commit()
-    return user
+    return _shown(db, user)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -98,6 +129,22 @@ def delete_user(user_id: int, admin: Admin, db: DB) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "You cannot delete yourself")
     if user.role == Role.admin and user.active and _active_admins(db) <= 1:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cannot remove the last active admin")
+    if user.role == Role.red_team and (
+        db.scalar(
+            select(func.count())
+            .select_from(TestCase)
+            .where((TestCase.created_by == user.username) | (TestCase.red_by == user.username))
+        )
+        or db.scalar(
+            select(func.count())
+            .select_from(TestAttachment)
+            .where(TestAttachment.uploaded_by == user.username)
+        )
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This red team account has entries in campaigns; lock it instead of deleting it",
+        )
     audit.record(db, admin, "delete", "user", user.username)
     db.delete(user)
     db.commit()

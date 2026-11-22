@@ -95,6 +95,7 @@ class VerificationOut(BaseModel):
     result: VerificationResult
     note: str
     config_tag: str | None = None
+    test_id: int | None = None
 
 
 def open_issues(db: Session, level: str = "l3") -> dict[int, date]:

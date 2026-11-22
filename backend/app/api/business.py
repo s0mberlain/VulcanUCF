@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app import audit, drivers, interviews
@@ -16,6 +16,7 @@ from app.models import (
     L3UseCase,
     ReferenceItem,
     RefKind,
+    RoundDetection,
     l2_actors,
     l3_references,
 )
@@ -135,8 +136,19 @@ def delete_ref(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     used = _ref_users(db, item)
     systems = interviews.log_source_users(db).get(item.id, []) if kind == RefKind.log_source else []
-    if (used or systems) and not confirm:
+    detections = (
+        db.scalar(
+            select(func.count())
+            .select_from(RoundDetection)
+            .where(RoundDetection.item_id == item.id)
+        )
+        if kind == RefKind.detection_technology
+        else 0
+    )
+    if (used or systems or detections) and not confirm:
         parts = []
+        if detections:
+            parts.append(f"{detections} test results (the name stays there as text)")
         if used:
             parts.append(f"{len(used)} use cases or rules")
         if systems:

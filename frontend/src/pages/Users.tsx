@@ -4,7 +4,7 @@ import { ROLE_LABEL, useAuth } from "../auth";
 import { confirmDialog, ErrorNote, Modal } from "../components/ui";
 import { locale, t } from "../i18n";
 
-const ROLES: Role[] = ["admin", "analyst", "auditor"];
+const ROLES: Role[] = ["admin", "analyst", "auditor", "red_team"];
 
 function fmt(ts: string | null): string {
   return ts ? new Date(ts).toLocaleString(locale()) : t("never");
@@ -16,7 +16,15 @@ export default function Users() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pwUser, setPwUser] = useState<User | null>(null);
-  const [form, setForm] = useState({ username: "", display_name: "", role: "analyst" as Role, password: "" });
+  const [form, setForm] = useState({
+    username: "",
+    display_name: "",
+    role: "analyst" as Role,
+    password: "",
+    follows: true,
+    expires: "",
+  });
+  const [expiryUser, setExpiryUser] = useState<User | null>(null);
 
   const reload = useCallback(() => {
     api
@@ -40,8 +48,21 @@ export default function Users() {
 
   async function create(e: FormEvent) {
     e.preventDefault();
-    await run(() => api.createUser(form), t("User {user} created", { user: form.username }));
-    setForm({ username: "", display_name: "", role: "analyst", password: "" });
+    const red = form.role === "red_team";
+    await run(
+      () =>
+        api.createUser({
+          username: form.username,
+          display_name: form.display_name,
+          role: form.role,
+          password: form.password,
+          ...(red
+            ? { expiry_follows_campaign: form.follows, expires_at: form.expires ? new Date(form.expires + "T23:59:59").toISOString() : null }
+            : {}),
+        }),
+      t("User {user} created", { user: form.username }),
+    );
+    setForm({ username: "", display_name: "", role: "analyst", password: "", follows: true, expires: "" });
   }
 
   async function changeRole(u: User, role: Role) {
@@ -143,8 +164,8 @@ export default function Users() {
                     }
                     onChange={(e) => void changeRole(u, e.target.value as Role)}
                   >
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
+                    {ROLES.filter((r) => r !== "red_team" || u.role === "red_team").map((r) => (
+                      <option key={r} value={r} disabled={r === "red_team"}>
                         {ROLE_LABEL[r]}
                       </option>
                     ))}
@@ -159,9 +180,26 @@ export default function Users() {
                   <span className={"pill " + (u.active ? "pill-ok" : "pill-warn")}>
                     {u.active ? t("Active") : t("Disabled")}
                   </span>
+                  {u.role === "red_team" && (
+                    <div className="small" style={{ marginTop: 6 }}>
+                      {u.effective_expires_at && new Date(u.effective_expires_at) < new Date() ? (
+                        <span className="pill pill-poor">{t("Expired {date}", { date: fmt(u.effective_expires_at).split(",")[0] ?? "" })}</span>
+                      ) : (
+                        <span className="muted">
+                          {u.effective_expires_at ? t("Ends {date}", { date: fmt(u.effective_expires_at).split(",")[0] ?? "" }) : t("No end date")}
+                        </span>
+                      )}{" "}
+                      <span className="muted">· {u.expiry_follows_campaign ? t("follows the campaign") : t("fixed")}</span>
+                    </div>
+                  )}
                 </td>
                 <td>
                   <div className="row-actions">
+                    {u.role === "red_team" && (
+                      <button type="button" className="btn btn-sm" onClick={() => setExpiryUser(u)}>
+                        {t("Change expiry")}
+                      </button>
+                    )}
                     {u.auth_source === "local" && (
                       <button type="button" className="btn btn-sm" onClick={() => setPwUser(u)}>
                         {t("Reset password")}
@@ -253,6 +291,23 @@ export default function Users() {
               required
             />
           </label>
+          {form.role === "red_team" && (
+            <fieldset className="fieldset" style={{ gridColumn: "1 / -1" }}>
+              <legend>{t("Account ends")}</legend>
+              <label className="check">
+                <input type="radio" name="expiry" checked={form.follows} onChange={() => setForm({ ...form, follows: true })} />
+                {t("When the assigned campaigns end (set as soon as a campaign is assigned)")}
+              </label>
+              <label className="check">
+                <input type="radio" name="expiry" checked={!form.follows} onChange={() => setForm({ ...form, follows: false })} />
+                {t("On a fixed date")}
+              </label>
+              <label className="field">
+                {form.follows ? t("Until a campaign is assigned, the account ends on") : t("Date")} *
+                <input className="input" type="date" required value={form.expires} onChange={(e) => setForm({ ...form, expires: e.target.value })} />
+              </label>
+            </fieldset>
+          )}
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button type="submit" className="btn btn-primary">
               {t("Add user")}
@@ -261,6 +316,16 @@ export default function Users() {
         </form>
       </section>
 
+      {expiryUser && (
+        <ExpiryDialog
+          user={expiryUser}
+          onClose={() => setExpiryUser(null)}
+          onSaved={() => {
+            setNotice(t("Expiry of {user} changed", { user: expiryUser.username }));
+            reload();
+          }}
+        />
+      )}
       {pwUser && (
         <PasswordDialog
           user={pwUser}
@@ -340,6 +405,50 @@ function PasswordDialog({ user, onClose, onSaved }: { user: User; onClose: () =>
           <button type="submit" className="btn btn-primary" disabled={busy}>
             {busy ? t("Saving…") : t("Set password")}
           </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ExpiryDialog({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: () => void }) {
+  const [follows, setFollows] = useState(!!user.expiry_follows_campaign);
+  const [date, setDate] = useState((user.expires_at ?? user.effective_expires_at ?? "").slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+  const past = !!date && new Date(date + "T23:59:59") < new Date();
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    try {
+      await api.updateUser(user.id, {
+        expiry_follows_campaign: follows,
+        ...(date ? { expires_at: new Date(date + "T23:59:59").toISOString() } : {}),
+      });
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+  return (
+    <Modal title={t("Expiry of {user}", { user: user.username })} open onClose={onClose}>
+      <form className="stack" onSubmit={submit}>
+        <ErrorNote error={error} />
+        <label className="check">
+          <input type="radio" name="follows" checked={follows} onChange={() => setFollows(true)} />
+          {t("Follow the assigned campaigns (latest planned end)")}
+        </label>
+        <label className="check">
+          <input type="radio" name="follows" checked={!follows} onChange={() => setFollows(false)} />
+          {t("Fixed date")}
+        </label>
+        <label className="field">
+          {follows ? t("Used until a campaign is assigned") : t("Date")}
+          <input className="input" type="date" required={!follows} value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        {past && <p className="form-error" role="status">{t("This date is in the past: the account is locked at once.")}</p>}
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>{t("Cancel")}</button>
+          <button type="submit" className="btn btn-primary">{t("Save")}</button>
         </div>
       </form>
     </Modal>

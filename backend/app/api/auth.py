@@ -102,6 +102,10 @@ def login(
 
     if not password_ok or not user.active:
         raise fail(invalid)
+    from app import purple  # late import: purple imports security
+
+    if purple.account_expired(user, db):
+        raise fail(invalid)
     if user.totp_enabled:
         if not body.otp:
             # password was right: ask for the second factor (does not count as a failure)

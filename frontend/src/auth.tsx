@@ -71,6 +71,10 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
   const location = useLocation();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  // red team accounts only have their campaigns and their account
+  if (user.role === "red_team" && !/^\/(verification\/(campaigns|tests)|account)/.test(location.pathname)) {
+    return <Navigate to="/verification/campaigns" replace />;
+  }
   if (roles && !roles.includes(user.role)) {
     return (
       <div className="empty">
@@ -86,4 +90,5 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: t("Admin"),
   analyst: t("Analyst"),
   auditor: t("Auditor (read-only)"),
+  red_team: t("Red team"),
 };

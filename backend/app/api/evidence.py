@@ -27,7 +27,7 @@ from sqlalchemy import func, select
 
 from app import audit
 from app.api.deps import DB, SettingsDep
-from app.models import Interview, InterviewAttachment, InterviewStatus
+from app.models import Interview, InterviewAttachment, InterviewStatus, TestAttachment
 from app.security import Admin, Editor, Reader
 
 router = APIRouter(tags=["systems & interviews"])
@@ -282,7 +282,10 @@ def delete_attachment(attachment_id: int, user: Editor, db: DB) -> None:
 
 
 def used_bytes(db) -> int:
-    return int(db.scalar(select(func.coalesce(func.sum(InterviewAttachment.size), 0))) or 0)
+    """Interview evidence and test attachments together (PROJ-3 shares the storage limit)."""
+    iv = int(db.scalar(select(func.coalesce(func.sum(InterviewAttachment.size), 0))) or 0)
+    tests = int(db.scalar(select(func.coalesce(func.sum(TestAttachment.size), 0))) or 0)
+    return iv + tests
 
 
 class StorageOut(BaseModel):

@@ -1,7 +1,7 @@
 import type { RuleNameVariable } from "./lib/ruleName";
 import type { Lang } from "./i18n";
 import { translateServer } from "./serverTexts";
-export type Role = "admin" | "analyst" | "auditor";
+export type Role = "admin" | "analyst" | "auditor" | "red_team";
 
 export interface User {
   id: number;
@@ -15,6 +15,10 @@ export interface User {
   locale: Lang | null;
   last_login_at: string | null;
   created_at: string;
+  /** red team accounts: the date set by hand, whether it follows the campaigns, the date that applies */
+  expires_at?: string | null;
+  expiry_follows_campaign?: boolean;
+  effective_expires_at?: string | null;
 }
 
 export interface VersionInfo {
@@ -114,6 +118,8 @@ export interface Verification {
   result: "ok" | "issues";
   note: string;
   config_tag?: string | null;
+  /** set when the entry comes from a test result */
+  test_id?: number | null;
 }
 
 export interface L1 {
@@ -1144,10 +1150,26 @@ export const api = {
     request<void>("POST", "/api/auth/me/password", { current_password, new_password }),
   summary: () => request<CatalogueSummary>("GET", "/api/catalogue/summary"),
   users: () => request<User[]>("GET", "/api/users"),
-  createUser: (u: { username: string; display_name: string; role: Role; password: string; email?: string | null }) =>
-    request<User>("POST", "/api/users", u),
-  updateUser: (id: number, u: Partial<{ display_name: string; role: Role; active: boolean; password: string }>) =>
-    request<User>("PATCH", `/api/users/${id}`, u),
+  createUser: (u: {
+    username: string;
+    display_name: string;
+    role: Role;
+    password: string;
+    email?: string | null;
+    expires_at?: string | null;
+    expiry_follows_campaign?: boolean;
+  }) => request<User>("POST", "/api/users", u),
+  updateUser: (
+    id: number,
+    u: Partial<{
+      display_name: string;
+      role: Role;
+      active: boolean;
+      password: string;
+      expires_at: string | null;
+      expiry_follows_campaign: boolean;
+    }>,
+  ) => request<User>("PATCH", `/api/users/${id}`, u),
   deleteUser: (id: number) => request<void>("DELETE", `/api/users/${id}`),
   audit: (limit = 100) => request<AuditEntry[]>("GET", `/api/audit?limit=${limit}`),
 
@@ -1362,6 +1384,81 @@ export const api = {
     `/api/interview-attachments/${id}/content${download ? "?download=1" : ""}`,
   resetStrideMapping: () => request<StrideMapping>("POST", "/api/stride-mapping/reset"),
 
+  // tests and campaigns (PROJ-3)
+  campaigns: () => request<CampaignRow[]>("GET", "/api/campaigns"),
+  campaign: (id: number) => request<CampaignDetail>("GET", `/api/campaigns/${id}`),
+  createCampaign: (b: CampaignInput) => request<CampaignRow>("POST", "/api/campaigns", b),
+  updateCampaign: (id: number, b: CampaignInput) => request<CampaignRow>("PUT", `/api/campaigns/${id}`, b),
+  deleteCampaign: (id: number) => request<void>("DELETE", `/api/campaigns/${id}`),
+  setCampaignStatus: (id: number, status: CampaignStatus) =>
+    request<CampaignRow>("POST", `/api/campaigns/${id}/status`, { status }),
+  proposals: (id: number, b: { l2_codes: string[]; l3_codes: string[] }) =>
+    request<TestProposals>("POST", `/api/campaigns/${id}/proposals`, b),
+  redTeamAccounts: () => request<CampaignAccount[]>("GET", "/api/red-team-accounts"),
+  addTest: (campaignId: number, b: TestInput) => request<TestCaseOut>("POST", `/api/campaigns/${campaignId}/tests`, b),
+  test: (id: number) => request<TestCaseOut>("GET", `/api/tests/${id}`),
+  updateTest: (id: number, b: TestInput) => request<TestCaseOut>("PUT", `/api/tests/${id}`, b),
+  deleteTest: (id: number) => request<void>("DELETE", `/api/tests/${id}`),
+  recordRed: (
+    id: number,
+    b: { exec_status: TestStatus; executed_at: string | null; red_notes: string; expected_version: number },
+  ) => request<TestCaseOut>("PUT", `/api/tests/${id}/red`, b),
+  recordBlue: (
+    id: number,
+    b: { outcome: TestOutcome | null; detected_at: string | null; blue_notes: string; expected_version: number },
+  ) => request<TestCaseOut>("PUT", `/api/tests/${id}/blue`, b),
+  testDetail: (id: number) => request<TestDetail>("GET", `/api/tests/${id}`),
+  testEvents: (id: number, before: number) =>
+    request<TestEvent[]>("GET", `/api/tests/${id}/events?before=${before}`),
+  openRound: (id: number) => request<TestDetail>("POST", `/api/tests/${id}/rounds`),
+  deleteRound: (id: number, n: number) => request<TestDetail>("DELETE", `/api/tests/${id}/rounds/${n}`),
+  recordRoundRed: (id: number, n: number, b: RoundRedInput) =>
+    request<TestDetail>("PUT", `/api/tests/${id}/rounds/${n}/red`, b),
+  recordRoundBlue: (id: number, n: number, b: RoundBlueInput) =>
+    request<TestDetail>("PUT", `/api/tests/${id}/rounds/${n}/blue`, b),
+  addComment: (id: number, text: string, round_number: number | null) =>
+    request<TestDetail>("POST", `/api/tests/${id}/comments`, { text, round_number }),
+  removeComment: (id: number, eid: number) => request<TestDetail>("DELETE", `/api/tests/${id}/comments/${eid}`),
+  setCollaboration: (cid: number, collaboration: Collaboration) =>
+    request<{ collaboration: Collaboration }>("POST", `/api/campaigns/${cid}/collaboration`, { collaboration }),
+  saveToLibrary: (id: number) => request<TestTemplate>("POST", `/api/tests/${id}/library`),
+  quickTests: (f: { outcome?: TestOutcome; technique?: string; open_gaps?: boolean } = {}) =>
+    request<TestCaseOut[]>(
+      "GET",
+      `/api/quick-tests?${new URLSearchParams(
+        Object.entries(f).filter(([, v]) => v !== undefined && v !== "" && v !== false) as [string, string][],
+      )}`,
+    ),
+  createQuickTest: (b: QuickTestInput) => request<TestCaseOut>("POST", "/api/quick-tests", b),
+  library: (f: { technique?: string; q?: string } = {}) =>
+    request<TestTemplate[]>(
+      "GET",
+      `/api/library?${new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])}`,
+    ),
+  createTemplate: (b: Omit<TestTemplate, "id" | "uses" | "created_by" | "created_at" | "updated_at" | "technique_name">) =>
+    request<TestTemplate>("POST", "/api/library", b),
+  updateTemplate: (
+    id: number,
+    b: Omit<TestTemplate, "id" | "uses" | "created_by" | "created_at" | "updated_at" | "technique_name">,
+  ) => request<TestTemplate>("PUT", `/api/library/${id}`, b),
+  deleteTemplate: (id: number) => request<void>("DELETE", `/api/library/${id}`),
+  testGaps: (accepted = false) => request<TestGap[]>("GET", `/api/test-gaps?accepted=${accepted}`),
+  testGapCount: () => request<{ open: number }>("GET", "/api/test-gaps/count"),
+  acceptGap: (b: { l3_code: string | null; technique: string; scope: string; test_id: number; reason: string }) =>
+    request<void>("POST", "/api/test-gaps/accept", b),
+  ruleTests: (code: string) => request<RuleTests>("GET", `/api/l3/${encodeURIComponent(code)}/tests`),
+  l2TestSummary: (code: string) => request<L2TestSummary>("GET", `/api/l2/${encodeURIComponent(code)}/tests-summary`),
+  testAttachmentUrl: (id: number, download = false) => `/api/test-attachments/${id}/content${download ? "?download=1" : ""}`,
+  uploadTestAttachment: async (testId: number, file: File, round?: number): Promise<TestAttachmentInfo> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`/api/tests/${testId}/attachments${round ? `?round=${round}` : ""}`, { method: "POST", body: fd, credentials: "same-origin" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
+    return data as TestAttachmentInfo;
+  },
+  deleteTestAttachment: (id: number) => request<void>("DELETE", `/api/test-attachments/${id}`),
+
   demoDataAllowed: () => request<{ allowed: boolean }>("GET", "/api/admin/demo-data"),
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),
 };
@@ -1369,3 +1466,286 @@ export const api = {
 const enc = encodeURIComponent;
 export type Level = "l2" | "l3";
 const cfgUrl = (level: Level, code: string) => `/api/${level}/${enc(code)}/config`;
+
+
+// ---------------------------------------------------------------- tests and campaigns (PROJ-3)
+
+export type TestStatus = "not_run" | "executed" | "not_executable";
+export type TestOutcome = "blocked" | "alerted" | "logged" | "not_detected";
+export type CampaignStatus = "planned" | "running" | "closed";
+export type Collaboration = "hidden" | "open";
+export type RoundState = "open" | "waiting" | "done";
+export type RuleTestState = "verified" | "partial" | "issues" | "due" | "none";
+
+export interface TestLink {
+  l3_code: string;
+  rule_name: string;
+  scopes: string[];
+  deleted: boolean;
+  rule_scopes: string[];
+}
+
+export interface TestAttachmentInfo {
+  id: number;
+  side: "red" | "blue";
+  round: number | null;
+  filename: string;
+  size: number;
+  uploaded_by: string;
+  uploaded_at: string;
+  viewable: boolean;
+}
+
+export interface TestCaseOut {
+  id: number;
+  campaign_id: number | null;
+  campaign_name: string | null;
+  title: string;
+  technique: string;
+  technique_name: string | null;
+  /** Markdown */
+  description: string;
+  procedure: string;
+  tools: string;
+  prerequisites: string;
+  expected_detection: string;
+  created_by: string;
+  created_by_red_team: boolean;
+  links: TestLink[];
+  needs_rules: boolean;
+  status: RoundState;
+  round_count: number;
+  exec_status: TestStatus;
+  executed_at: string | null;
+  red_notes: string;
+  red_by: string | null;
+  red_at: string | null;
+  outcome: TestOutcome | null;
+  detected_at: string | null;
+  blue_notes: string | null;
+  blue_by: string | null;
+  blue_at: string | null;
+  time_to_detect_seconds: number | null;
+  attachments: TestAttachmentInfo[];
+  version: number;
+  red_version: number;
+  blue_version: number;
+  open_gaps: number;
+  can_edit_definition: boolean;
+  can_record_red: boolean;
+  can_record_blue: boolean;
+  can_delete: boolean;
+}
+
+export interface RoundDetection {
+  name: string;
+  item_id: number | null;
+}
+
+export interface TestRound {
+  number: number;
+  state: RoundState;
+  opened_by: string;
+  opened_at: string;
+  exec_status: TestStatus;
+  started_at: string | null;
+  ended_at: string | null;
+  executed_what: string;
+  red_notes: string;
+  red_by: string | null;
+  red_at: string | null;
+  /** The blue side is hidden from this red-team account (campaign setting). */
+  blue_hidden: boolean;
+  outcome: TestOutcome | null;
+  detected_at: string | null;
+  detected_by: RoundDetection[];
+  blue_notes: string | null;
+  blue_by: string | null;
+  blue_at: string | null;
+  time_to_detect_seconds: number | null;
+  attachments: TestAttachmentInfo[];
+  red_version: number;
+  blue_version: number;
+  can_record_red: boolean;
+  can_record_blue: boolean;
+  can_delete: boolean;
+}
+
+export interface TestEvent {
+  id: number;
+  round_number: number | null;
+  kind: string;
+  side: "red" | "blue" | "system";
+  author: string;
+  at: string;
+  text: string;
+  data: Record<string, unknown>;
+  removed: boolean;
+  removed_by: string | null;
+  removed_at: string | null;
+  can_remove: boolean;
+}
+
+export interface TestDetail extends TestCaseOut {
+  rounds: TestRound[];
+  events: TestEvent[];
+  events_more: boolean;
+  collaboration: Collaboration | null;
+  can_comment: boolean;
+  can_open_round: boolean;
+  max_rounds: number;
+}
+
+export interface RoundRedInput {
+  exec_status: TestStatus;
+  started_at: string | null;
+  ended_at: string | null;
+  executed_what: string;
+  red_notes: string;
+  expected_version: number;
+}
+
+export interface RoundBlueInput {
+  outcome: TestOutcome | null;
+  detected_at: string | null;
+  detected_by: string[];
+  blue_notes: string;
+  expected_version: number;
+}
+
+export interface TestInput {
+  title: string;
+  technique: string;
+  description: string;
+  procedure: string;
+  tools: string;
+  prerequisites: string;
+  expected_detection: string;
+  template_id?: number | null;
+  links: { l3_code: string; scopes: string[] }[];
+  expected_version?: number | null;
+}
+
+export interface QuickTestInput extends TestInput {
+  exec_status: TestStatus;
+  executed_at: string | null;
+  red_notes: string;
+  outcome: TestOutcome | null;
+  detected_at: string | null;
+  blue_notes: string;
+}
+
+export interface TestTemplate {
+  id: number;
+  title: string;
+  technique: string;
+  technique_name: string | null;
+  description: string;
+  procedure: string;
+  tools: string;
+  prerequisites: string;
+  expected_detection: string;
+  uses: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignAccount {
+  id: number;
+  username: string;
+  display_name: string;
+}
+
+export interface CampaignRow {
+  id: number;
+  name: string;
+  description: string;
+  planned_start: string;
+  planned_end: string;
+  status: CampaignStatus;
+  collaboration: Collaboration;
+  tests: number;
+  outcomes: Record<TestOutcome, number> | null;
+  open_points: number;
+  accounts: CampaignAccount[];
+  can_delete: boolean;
+}
+
+export interface CampaignDetail extends CampaignRow {
+  test_cases: TestCaseOut[];
+}
+
+export interface CampaignInput {
+  name: string;
+  description: string;
+  planned_start: string;
+  planned_end: string;
+  account_ids: number[];
+}
+
+export interface ProposalRuleInfo {
+  code: string;
+  name: string;
+  scopes: string[];
+}
+
+export interface TestProposal {
+  technique: string;
+  technique_name: string | null;
+  rules: ProposalRuleInfo[];
+  templates: TestTemplate[];
+  existing_tests: number;
+}
+
+export interface TestProposals {
+  proposals: TestProposal[];
+  no_technique: ProposalRuleInfo[];
+  notes: string[];
+}
+
+export interface TestGap {
+  l3_code: string | null;
+  rule_name: string | null;
+  technique: string;
+  technique_name: string | null;
+  scope: string;
+  outcome: TestOutcome;
+  test_id: number;
+  test_title: string;
+  executed_at: string;
+  campaign_id: number | null;
+  campaign_name: string | null;
+  accepted: boolean;
+  accepted_reason: string | null;
+  accepted_by: string | null;
+  accepted_at: string | null;
+}
+
+export interface ScopeState {
+  scope: string;
+  status: "covered" | "expired" | "problem" | "open";
+  test_id: number | null;
+  test_title: string | null;
+  outcome: TestOutcome | null;
+  date: string | null;
+  until: string | null;
+}
+
+export interface RuleTests {
+  state: RuleTestState;
+  covered: number;
+  total: number;
+  verified_date: string | null;
+  scopes: ScopeState[];
+  tests: TestCaseOut[];
+  gaps: TestGap[];
+  interval_days: number;
+}
+
+export interface L2TestSummary {
+  tests: number;
+  last_test: string | null;
+  open_gaps: number;
+  states: Record<RuleTestState, number>;
+}

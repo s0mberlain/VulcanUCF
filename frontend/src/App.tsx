@@ -25,6 +25,12 @@ import Interview from "./pages/Interview";
 import StrideMappingPage from "./pages/StrideMappingPage";
 import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
+import Campaigns from "./pages/Campaigns";
+import CampaignDetail from "./pages/CampaignDetail";
+import Gaps from "./pages/Gaps";
+import QuickTests from "./pages/QuickTests";
+import TestLibrary from "./pages/TestLibrary";
+import TestDetail from "./pages/TestDetail";
 import { t } from "./i18n";
 import { ConfirmHost } from "./components/ui";
 
@@ -46,6 +52,12 @@ export default function App() {
           <Route path="usecases/l3/:code" element={<RuleDetail />} />
           <Route path="usecases/requests" element={<DetectionRequests />} />
           <Route path="verification" element={<Verification />} />
+          <Route path="verification/campaigns" element={<Campaigns />} />
+          <Route path="verification/campaigns/:id" element={<CampaignDetail />} />
+          <Route path="verification/quick-tests" element={<QuickTests />} />
+          <Route path="verification/gaps" element={<Gaps />} />
+          <Route path="verification/library" element={<TestLibrary />} />
+          <Route path="verification/tests/:id" element={<TestDetail />} />
           <Route path="drivers" element={<Drivers />} />
           <Route path="systems" element={<Systems />} />
           <Route path="systems/:id" element={<SystemDetail />} />

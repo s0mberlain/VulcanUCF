@@ -29,6 +29,8 @@ from app.api import (
     lifecycle,
     oidc,
     output,
+    purple,
+    rounds,
     scores,
     snapshots,
     systems,
@@ -211,6 +213,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app_settings.router,
         systems.router,
         evidence.router,
+        purple.router,
+        rounds.router,
     ):
         api.include_router(r)
     app.include_router(api)

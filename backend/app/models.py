@@ -42,6 +42,8 @@ class Role(enum.StrEnum):
     admin = "admin"
     analyst = "analyst"
     auditor = "auditor"
+    # external tester: sees only the campaigns it is assigned to (PROJ-3)
+    red_team = "red_team"
 
 
 class AuthSource(enum.StrEnum):
@@ -104,6 +106,12 @@ class User(Base):
     totp_last_step: Mapped[int | None] = mapped_column(Integer)
     # sha256 hashes of unused one-time recovery codes
     recovery_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Red team accounts end on a date (PROJ-3). It follows the assigned campaigns unless an
+    # admin fixed it by hand (expiry_follows_campaign false).
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expiry_follows_campaign: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
 
 
 class UserSession(Base):
@@ -320,6 +328,10 @@ class Verification(Base):
     )
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # set when the entry comes from a test result (PROJ-3); recomputed with the test
+    test_id: Mapped[int | None] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="CASCADE"), index=True
+    )
 
 
 class ConfigCommit(Base):
@@ -764,3 +776,288 @@ class StrideMapping(Base):
 L2UseCase.linked_systems = relationship(
     System, secondary="system_links", viewonly=True, order_by=System.name
 )
+
+
+# ---------------------------------------------------------------- tests (PROJ-3)
+
+
+class CampaignStatus(enum.StrEnum):
+    planned = "planned"
+    running = "running"
+    closed = "closed"
+
+
+class TestStatus(enum.StrEnum):
+    not_run = "not_run"
+    executed = "executed"
+    not_executable = "not_executable"
+
+
+class TestOutcome(enum.StrEnum):
+    blocked = "blocked"
+    alerted = "alerted"
+    logged = "logged"
+    not_detected = "not_detected"
+
+
+campaign_accounts = Table(
+    "campaign_accounts",
+    Base.metadata,
+    Column("campaign_id", ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class TestTemplate(Base):
+    """A reusable test script (library). Tests made from it are copies."""
+
+    __test__ = False
+    __tablename__ = "test_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    technique: Mapped[str] = mapped_column(String(32), index=True)
+    # Markdown
+    description: Mapped[str] = mapped_column(Text, default="")
+    procedure: Mapped[str] = mapped_column(Text, default="")
+    tools: Mapped[str] = mapped_column(String(500), default="")
+    prerequisites: Mapped[str] = mapped_column(Text, default="")
+    expected_detection: Mapped[str] = mapped_column(Text, default="")
+    uses: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    planned_start: Mapped[date] = mapped_column(Date)
+    planned_end: Mapped[date] = mapped_column(Date)
+    status: Mapped[CampaignStatus] = mapped_column(
+        _enum(CampaignStatus, "campaign_status"), default=CampaignStatus.planned
+    )
+    # hidden: the red team sees the blue team's results after closing; open: at once (PROJ-4)
+    collaboration: Mapped[str] = mapped_column(
+        String(16), default="hidden", server_default="hidden"
+    )
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    accounts: Mapped[list[User]] = relationship(secondary=campaign_accounts)
+    tests: Mapped[list["TestCase"]] = relationship(
+        back_populates="campaign", cascade="all, delete-orphan", order_by="TestCase.id"
+    )
+
+
+class TestCase(Base):
+    """One test. campaign_id is empty for a quick test."""
+
+    __test__ = False
+    __tablename__ = "test_cases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int | None] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    technique: Mapped[str] = mapped_column(String(32), index=True)
+    # Markdown
+    description: Mapped[str] = mapped_column(Text, default="")
+    procedure: Mapped[str] = mapped_column(Text, default="")
+    tools: Mapped[str] = mapped_column(String(500), default="")
+    prerequisites: Mapped[str] = mapped_column(Text, default="")
+    expected_detection: Mapped[str] = mapped_column(Text, default="")
+    template_id: Mapped[int | None] = mapped_column(Integer)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_by_red_team: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    # red team part
+    exec_status: Mapped[TestStatus] = mapped_column(
+        _enum(TestStatus, "test_status"), default=TestStatus.not_run
+    )
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    red_notes: Mapped[str] = mapped_column(Text, default="")
+    red_by: Mapped[str | None] = mapped_column(String(64))
+    red_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # blue team part
+    outcome: Mapped[TestOutcome | None] = mapped_column(_enum(TestOutcome, "test_outcome"))
+    detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blue_notes: Mapped[str] = mapped_column(Text, default="")
+    blue_by: Mapped[str | None] = mapped_column(String(64))
+    blue_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # three parts that can conflict on their own: the definition, the red and the blue fields
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    red_version: Mapped[int] = mapped_column(Integer, default=1)
+    blue_version: Mapped[int] = mapped_column(Integer, default=1)
+
+    campaign: Mapped[Campaign | None] = relationship(back_populates="tests")
+    rules: Mapped[list["TestRule"]] = relationship(
+        back_populates="test", cascade="all, delete-orphan", order_by="TestRule.id"
+    )
+    attachments: Mapped[list["TestAttachment"]] = relationship(
+        back_populates="test", cascade="all, delete-orphan", order_by="TestAttachment.id"
+    )
+    rounds: Mapped[list["TestRound"]] = relationship(
+        back_populates="test", cascade="all, delete-orphan", order_by="TestRound.number"
+    )
+    events: Mapped[list["TestEvent"]] = relationship(
+        back_populates="test", cascade="all, delete-orphan", order_by="TestEvent.id"
+    )
+
+
+class TestRule(Base):
+    """The link of a test to an L3 rule with the scopes the test covers for that rule."""
+
+    __test__ = False
+    __tablename__ = "test_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    test_id: Mapped[int] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="CASCADE"), index=True
+    )
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="SET NULL"), index=True
+    )
+    # kept when the rule is deleted ("Rule deleted: CODE")
+    rule_code: Mapped[str] = mapped_column(String(64))
+    rule_name: Mapped[str] = mapped_column(String(255), default="")
+    scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    test: Mapped[TestCase] = relationship(back_populates="rules")
+
+
+class TestAttachment(Base):
+    __test__ = False
+    __tablename__ = "test_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    test_id: Mapped[int] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="CASCADE"), index=True
+    )
+    side: Mapped[str] = mapped_column(String(8))  # red | blue
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(128))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    uploaded_by: Mapped[str] = mapped_column(String(64))
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # the round the file belongs to (PROJ-4)
+    round_id: Mapped[int | None] = mapped_column(
+        ForeignKey("test_rounds.id", ondelete="SET NULL"), index=True
+    )
+
+    test: Mapped[TestCase] = relationship(back_populates="attachments")
+
+
+class GapAcceptance(Base):
+    """A gap from a test that an analyst accepted with a reason (it stays in the history)."""
+
+    __tablename__ = "gap_acceptances"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    technique: Mapped[str] = mapped_column(String(32))
+    scope: Mapped[str] = mapped_column(String(128), default="")
+    # the test whose result is accepted; a later test starts the question again
+    test_id: Mapped[int] = mapped_column(ForeignKey("test_cases.id", ondelete="CASCADE"))
+    reason: Mapped[str] = mapped_column(Text)
+    accepted_by: Mapped[str] = mapped_column(String(64))
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TestRound(Base):
+    """One attempt of a test: the red team's execution and the blue team's result (PROJ-4)."""
+
+    __test__ = False
+    __tablename__ = "test_rounds"
+    __table_args__ = (UniqueConstraint("test_id", "number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    test_id: Mapped[int] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="CASCADE"), index=True
+    )
+    number: Mapped[int] = mapped_column(Integer)
+    opened_by: Mapped[str] = mapped_column(String(64))
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # red team
+    exec_status: Mapped[TestStatus] = mapped_column(
+        _enum(TestStatus, "test_status"), default=TestStatus.not_run
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    executed_what: Mapped[str] = mapped_column(Text, default="")
+    red_notes: Mapped[str] = mapped_column(Text, default="")
+    red_by: Mapped[str | None] = mapped_column(String(64))
+    red_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # blue team
+    outcome: Mapped[TestOutcome | None] = mapped_column(_enum(TestOutcome, "test_outcome"))
+    detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blue_notes: Mapped[str] = mapped_column(Text, default="")
+    blue_by: Mapped[str | None] = mapped_column(String(64))
+    blue_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    red_version: Mapped[int] = mapped_column(Integer, default=1)
+    blue_version: Mapped[int] = mapped_column(Integer, default=1)
+
+    test: Mapped[TestCase] = relationship(back_populates="rounds")
+    detections: Mapped[list["RoundDetection"]] = relationship(
+        back_populates="round", cascade="all, delete-orphan", order_by="RoundDetection.id"
+    )
+
+
+class RoundDetection(Base):
+    """What detected the attack in a round: an entry of the list "Detection technologies"."""
+
+    __tablename__ = "round_detections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    round_id: Mapped[int] = mapped_column(
+        ForeignKey("test_rounds.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reference_items.id", ondelete="SET NULL"), index=True
+    )
+    # kept when the entry is deleted from the list (shown as plain text then)
+    name: Mapped[str] = mapped_column(String(255))
+
+    round: Mapped[TestRound] = relationship(back_populates="detections")
+    item: Mapped[ReferenceItem | None] = relationship()
+
+
+class TestEvent(Base):
+    """The history of a test: comments of both sides and automatic entries (PROJ-4)."""
+
+    __test__ = False
+    __tablename__ = "test_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    test_id: Mapped[int] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="CASCADE"), index=True
+    )
+    round_number: Mapped[int | None] = mapped_column(Integer)
+    # comment | round_opened | round_deleted | execution | result | result_changed | file_added
+    # | file_removed | campaign_status | collaboration | comment_removed
+    kind: Mapped[str] = mapped_column(String(32))
+    side: Mapped[str] = mapped_column(String(8))  # red | blue | system
+    author: Mapped[str] = mapped_column(String(64))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    removed_by: Mapped[str | None] = mapped_column(String(64))
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    test: Mapped[TestCase] = relationship(back_populates="events")
