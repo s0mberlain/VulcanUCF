@@ -1,7 +1,7 @@
 {
   "realm": "magma",
   "enabled": true,
-  "displayName": "Vulcan test realm",
+  "displayName": "Vulcan UCF test realm",
   "sslRequired": "none",
   "groups": [{ "name": "SOC-Admins" }, { "name": "SOC-Analysts" }, { "name": "Audit" }],
   "users": [
@@ -48,7 +48,7 @@
   "clients": [
     {
       "clientId": "magma",
-      "name": "Vulcan",
+      "name": "Vulcan UCF",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,

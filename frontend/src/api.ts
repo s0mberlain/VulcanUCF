@@ -738,6 +738,53 @@ export type RiskCoverageState = "covered" | "partial" | "gap" | "below" | "unrat
 /** A use case chosen by hand: a whole L2 or a single L3 rule. */
 export type AddedUseCase = { l2_id: number; l3_id?: undefined; threats: ThreatRef[] } | { l3_id: number; l2_id?: undefined; threats: ThreatRef[] };
 
+/** Implementation status of a detection request (PROJ-1). */
+export type RequestStatus = "open" | "in_progress" | "implemented" | "rejected" | "not_feasible";
+
+export const REQUEST_STATUSES: RequestStatus[] = ["open", "in_progress", "implemented", "rejected", "not_feasible"];
+
+/** What implemented a request: an L2 use case or a single L3 rule. */
+export interface RequestLink {
+  l2_id: number | null;
+  l3_id: number | null;
+  code: string;
+  deleted: boolean;
+}
+
+/** The status part of a detection request; shared by all interviews of the system. */
+export interface RequestState {
+  status: RequestStatus;
+  status_note: string;
+  link: RequestLink | null;
+  status_by: string | null;
+  status_at: string | null;
+}
+
+/** A detection request as the API shows it (title and description are frozen with the interview). */
+export interface DetectionRequest extends RequestState {
+  key: string;
+  title: string;
+  description: string;
+  component: string;
+  component_name: string;
+  category: ThreatCategory;
+}
+
+/** A request in the overview of all systems (PROJ-2). */
+export interface OverviewRequest extends RequestState {
+  key: string;
+  title: string;
+  description: string;
+  system_id: number;
+  system_name: string;
+  archived: boolean;
+  /** component name */
+  component: string;
+  category: ThreatCategory;
+  /** risk score (1..25) of the threat; null when unrated */
+  risk_score: number | null;
+}
+
 /** One applying threat with the accepted use cases that address it (risk overview). */
 export interface RiskRow {
   component: string;
@@ -770,7 +817,7 @@ export interface RiskRow {
     auto?: boolean;
     deleted: boolean;
   }[];
-  requests: string[];
+  requests: { key: string; title: string; status: RequestStatus }[];
 }
 
 export interface SystemLinkInfo {
@@ -814,7 +861,8 @@ export interface SystemDetail extends SystemRow {
     blind: boolean;
     rules: { rule_code: string; rule_name: string; missing: string[]; partial: boolean }[];
   }[];
-  gap_requests: { text: string; component: string; category: ThreatCategory }[];
+  /** all detection requests of the latest completed interview, with their status */
+  gap_requests: (RequestState & { key: string; title: string; description: string; component: string; category: ThreatCategory })[];
   /** #59: risks above the threshold that no linked use case addresses */
   gap_risks?: { component: string; component_name: string; category: ThreatCategory; score: number | null; level: number | null }[];
   interviews: InterviewRow[];
@@ -902,7 +950,7 @@ export interface InterviewView {
   added: AddedUseCase[];
   removed_ids: number[];
   risks: RiskRow[];
-  requests: { key: string; text: string; component: string; component_name: string; category: ThreatCategory }[];
+  requests: DetectionRequest[];
   log_source_gaps: { l2_code: string; rule_code: string; rule_name: string; missing: string[]; partial?: boolean }[];
   /** #38: accepted use cases without any active rule */
   no_detection?: string[];
@@ -993,7 +1041,7 @@ export interface InterviewSave {
   added: AddedUseCase[];
   /** without threats the whole L2 is removed; with threats only from those risks (#57) */
   removed: { l2_id: number; reason: string; threats?: ThreatRef[] }[];
-  requests: { key: string; text: string; threat: ThreatRef }[];
+  requests: { key: string; title: string; description: string; threat: ThreatRef }[];
 }
 
 export interface InterviewCompare {
@@ -1287,6 +1335,19 @@ export const api = {
   startInterview: (systemId: number) => request<Interview>("POST", `/api/systems/${systemId}/interviews`),
   interview: (id: number) => request<Interview>("GET", `/api/interviews/${id}`),
   saveInterview: (id: number, body: InterviewSave) => request<Interview>("PUT", `/api/interviews/${id}`, body),
+  /** PROJ-2: the requests of the latest completed interview of every system */
+  detectionRequests: () => request<{ requests: OverviewRequest[] }>("GET", "/api/detection-requests"),
+  /** PROJ-1: works on draft and completed interviews; the last write wins */
+  setRequestStatus: (
+    systemId: number,
+    key: string,
+    body: { status: RequestStatus; note: string; l2_id?: number | null; l3_id?: number | null },
+  ) =>
+    request<RequestState & { key: string }>(
+      "PUT",
+      `/api/systems/${systemId}/detection-requests/${enc(key)}/status`,
+      body,
+    ),
   deleteInterview: (id: number) => request<void>("DELETE", `/api/interviews/${id}`),
   completeInterview: (id: number, version: number) =>
     request<Interview>("POST", `/api/interviews/${id}/complete`, { expected_version: version }),

@@ -23,7 +23,14 @@ listed in a component's `threats` after the six STRIDE categories, with `custom`
     added:      [{l2_id | l3_id, threats: [{component: key, category}]}]  (one of the two ids)
     removed:    [{l2_id, reason, threats?: [{component: key, category}]}]  (without threats the
                 whole L2 is removed; with threats it is only taken off those risks, issue #57)
-    requests:   [{key, text, threat: {component: key, category}}]
+    requests:   [{key, title, description, threat: {component: key, category}}]
+
+A detection request (PROJ-1) is identified by its `key`, which a re-interview copies, so all
+interviews of a system share one request. Title (up to 200 characters) and description are
+frozen with the interview; the implementation status is not: it lives in
+`DetectionRequestState` and is attached on read (`attach_status`). Requests written before
+PROJ-1 hold a single `text` and often no key; `upgrade_requests` turns them into title,
+description and a key that is the same in every interview.
 
 `evaluate()` resolves ids to names and works out the proposals; for a draft this runs on every
 read (so mapping, threshold, renamed or deleted use cases and log sources take effect), for a
@@ -31,6 +38,7 @@ completed interview its output is frozen in `Interview.result`. `risk_overview()
 evaluated threats and accepted use cases into one row per risk with its coverage.
 """
 
+import hashlib
 from datetime import date
 from typing import Any
 
@@ -40,12 +48,14 @@ from sqlalchemy.orm import Session, selectinload
 from app import attack
 from app.models import (
     AppSetting,
+    DetectionRequestState,
     Interview,
     InterviewStatus,
     L2UseCase,
     L3UseCase,
     ReferenceItem,
     RefKind,
+    RequestStatus,
     StrideMapping,
     System,
     SystemLink,
@@ -76,6 +86,114 @@ def category_order(category: str) -> int:
 def techniques_match(threat: str, rule: str) -> bool:
     """T1110 matches T1110.001 and the other way round; T1110.001 does not match T1110.002."""
     return threat == rule or rule.startswith(threat + ".") or threat.startswith(rule + ".")
+
+
+# ---------------------------------------------------------------- detection requests
+
+TITLE_MAX = 200
+NOTE_MAX = 2000
+# the statuses that need a reason
+NOTE_REQUIRED = (RequestStatus.rejected, RequestStatus.not_feasible)
+# the statuses of requests that are still to do (they count as gaps)
+UNRESOLVED = (RequestStatus.open, RequestStatus.in_progress)
+
+
+def split_text(text: str) -> tuple[str, str]:
+    """A request written before PROJ-1: a one-line text up to the title length is the title;
+    otherwise the first line (cut) is the title and the whole text the description."""
+    text = (text or "").strip()
+    first = text.splitlines()[0].strip() if text else ""
+    if "\n" not in text and len(text) <= TITLE_MAX:
+        return text, ""
+    return first[:TITLE_MAX], text
+
+
+def request_key(ref: tuple[str, str], text: str, taken: set[str]) -> str:
+    """A key for a request that has none (written before PROJ-1): the same text on the same
+    threat gets the same key in every interview, equal ones are told apart by a counter."""
+    base = "r" + hashlib.sha1(f"{ref[0]}|{ref[1]}|{text}".encode()).hexdigest()[:12]  # noqa: S324
+    key, n = base, 1
+    while key in taken:
+        n += 1
+        key = f"{base}-{n}"
+    return key
+
+
+def upgrade_requests(raw: list[dict]) -> list[dict]:
+    """Requests of a draft (`threat: {...}`) or of a frozen result (`component`, `category`) with
+    title, description and a key, also when they were written before PROJ-1."""
+    out: list[dict] = []
+    taken = {r["key"] for r in raw if r.get("key")}
+    for r in raw:
+        r = dict(r)
+        text = r.pop("text", None)
+        if "title" not in r:
+            r["title"], r["description"] = split_text(text or "")
+        r.setdefault("description", "")
+        if not r.get("key"):
+            ref = (
+                (r["threat"]["component"], r["threat"]["category"])
+                if "threat" in r
+                else (r.get("component", ""), r.get("category", ""))
+            )
+            r["key"] = request_key(ref, text or r["title"], taken)
+            taken.add(r["key"])
+        out.append(r)
+    return out
+
+
+def states_of(db: Session, system_id: int) -> dict[str, DetectionRequestState]:
+    return {
+        x.key: x
+        for x in db.scalars(
+            select(DetectionRequestState).where(DetectionRequestState.system_id == system_id)
+        )
+    }
+
+
+def state_view(db: Session, state: DetectionRequestState | None) -> dict:
+    """Status, reason, what implemented it and who changed it last, as the API shows it."""
+    if state is None:
+        return {
+            "status": RequestStatus.open.value,
+            "status_note": "",
+            "link": None,
+            "status_by": None,
+            "status_at": None,
+        }
+    link = None
+    if state.link_l2_id is not None or state.link_l3_id is not None:
+        if state.link_l3_id is not None:
+            exists = db.get(L3UseCase, state.link_l3_id) is not None
+        else:
+            exists = db.get(L2UseCase, state.link_l2_id) is not None
+        link = {
+            "l2_id": state.link_l2_id,
+            "l3_id": state.link_l3_id,
+            "code": state.link_code or "",
+            "deleted": not exists,
+        }
+    return {
+        "status": state.status.value,
+        "status_note": state.note,
+        "link": link,
+        "status_by": state.updated_by,
+        "status_at": state.updated_at,
+    }
+
+
+def attach_status(db: Session, system_id: int, view: dict) -> dict:
+    """Adds the current implementation status to the requests of an evaluated interview and
+    to the requests of its risk rows. The status is read now, also for a completed interview."""
+    states = states_of(db, system_id)
+    now = {k: state_view(db, x) for k, x in states.items()}
+    open_view = state_view(db, None)
+    view["requests"] = [r | now.get(r["key"], open_view) for r in view.get("requests", [])]
+    for row in view.get("risks", []):
+        row["requests"] = [
+            r | {"status": now.get(r["key"], open_view)["status"]} for r in row["requests"]
+        ]
+    return view
 
 
 CLASSIFICATIONS = ("public", "internal", "confidential", "restricted")
@@ -575,13 +693,14 @@ def evaluate(
     below.sort(key=lambda b: (-b["score"], b["component_name"], category_order(b["category"])))
 
     requests = []
-    for r in data.get("requests", []):
+    for r in upgrade_requests(data.get("requests", [])):
         ref = (r["threat"]["component"], r["threat"]["category"])
         t = threats.get(ref)
         requests.append(
             {
-                "key": r.get("key", ""),
-                "text": r["text"],
+                "key": r["key"],
+                "title": r["title"],
+                "description": r["description"],
                 "component": ref[0],
                 "component_name": t["component_name"] if t else "",
                 "category": ref[1],
@@ -685,6 +804,7 @@ def mark_deleted(db: Session, result: dict) -> dict:
     )
     for p in items:
         p["deleted"] = p["l3_id"] not in rules if p.get("l3_id") else p["l2_id"] not in existing
+    result["requests"] = upgrade_requests(result.get("requests", []))
     result["risks"] = risk_overview(result)
     return result
 
@@ -724,9 +844,11 @@ def risk_overview(view: dict) -> list[dict]:
     for p in view.get("proposals", []):
         for s in p.get("sources", []):
             by_threat.setdefault((s["component"], s["category"]), []).append(p)
-    reqs: dict[tuple[str, str], list[str]] = {}
-    for r in view.get("requests", []):
-        reqs.setdefault((r["component"], r["category"]), []).append(r["text"])
+    reqs: dict[tuple[str, str], list[dict]] = {}
+    for r in upgrade_requests(view.get("requests", [])):
+        reqs.setdefault((r["component"], r["category"]), []).append(
+            {"key": r["key"], "title": r["title"]}
+        )
     rows = []
     for c in view.get("components", []):
         for t in c.get("threats", []):
@@ -817,7 +939,7 @@ def copy_for_reinterview(previous: Interview, existing_ls: set[int]) -> dict:
         "components": comps,
         "added": list(data.get("added", [])),
         "removed": list(data.get("removed", [])),
-        "requests": list(data.get("requests", [])),
+        "requests": upgrade_requests(data.get("requests", [])),
     }
 
 

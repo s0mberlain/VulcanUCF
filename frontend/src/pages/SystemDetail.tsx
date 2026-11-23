@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type SystemDetail as Detail } from "../api";
+import { api, REQUEST_STATUSES, type RequestStatus, type SystemDetail as Detail } from "../api";
 import { useAuth } from "../auth";
 import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
 import { RiskCoverage, useCaseHref } from "../components/RiskCoverage";
+import { isTodo, RequestCard, statusLabel } from "../components/RequestStatus";
 import { fmtDate, fmtTime, num, pct } from "../lib/format";
 import { CLASSIFICATION_LABEL, INTERVIEW_STATUS_LABEL, registerCustomThreats, threatLabel } from "../lib/stride";
 import { StatePill, SystemDialog, systemInput } from "./Systems";
@@ -18,6 +19,8 @@ export default function SystemDetail() {
   const sys = useLoad<Detail>(() => api.system(sid), [sid]);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // detection requests still to do are shown first; the others can be switched on (PROJ-1)
+  const [shown, setShown] = useState<Set<RequestStatus>>(new Set(["open", "in_progress"]));
   const s = sys.data;
 
   async function run(fn: () => Promise<unknown>) {
@@ -95,12 +98,14 @@ export default function SystemDetail() {
   const uncovered = s.gap_risks ?? [];
   // #59: the same gaps as the "Gap" filter of the risk overview (risks without use case) plus
   // the gaps of linked use cases and open detection requests
-  const gapCount = uncovered.length + s.gap_no_rules.length + blind.length + s.gap_requests.length;
+  const todoRequests = s.gap_requests.filter((g) => isTodo(g.status));
+  const lastDone = [...s.interviews].filter((i) => i.status !== "draft").sort((x, y) => y.id - x.id)[0];
+  const gapCount = uncovered.length + s.gap_no_rules.length + blind.length + todoRequests.length;
 
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/systems">{t("Systems")}</Link> / <span>{s.name}</span>
+        <Link to="/systems">{t("Threat modelling")}</Link> / <span>{s.name}</span>
       </nav>
       <header className="page-header">
         <div>
@@ -141,7 +146,205 @@ export default function SystemDetail() {
         </p>
       )}
 
+      <section className="card stack-sm" aria-labelledby="stath">
+        <h2 id="stath" className="sr-only">
+          {t("Status")}
+        </h2>
+        <dl className="stat-grid">
+          <div>
+            <dt>{t("Detection coverage")}</dt>
+            <dd>{s.last_interview ? pct(s.coverage) : "–"}</dd>
+          </div>
+          <div>
+            <dt>{t("Linked use cases")}</dt>
+            <dd>{s.links.length}</dd>
+          </div>
+          <div>
+            <dt>{t("Gaps")}</dt>
+            <dd>{s.last_interview ? <a href="#gaph">{gapCount}</a> : "–"}</dd>
+          </div>
+          <div>
+            <dt>{t("Open requests")}</dt>
+            <dd>{todoRequests.length ? <a href="#sys-requests">{todoRequests.length}</a> : 0}</dd>
+          </div>
+          <div>
+            <dt>{t("Owner confirmation")}</dt>
+            <dd className="stat-text">
+              {lastDone ? (
+                <Link to={`/interviews/${lastDone.id}`}>{INTERVIEW_STATUS_LABEL[lastDone.status]}</Link>
+              ) : (
+                <span className="muted">{t("No interview yet.")}</span>
+              )}
+            </dd>
+          </div>
+        </dl>
+        <p className="muted small" style={{ margin: 0 }}>
+          {t("Coverage = average weight of the linked L2 use cases and L3 rules; use cases without scored rules count as 0.")}
+        </p>
+      </section>
+
+      <section className="card stack-sm" aria-labelledby="gaph">
+        <h2 id="gaph" className="h-sm">
+          {t("Gaps")}{" "}
+          {gapCount > 0 && (
+            <span className="muted small">
+              {t("{r} risks without use case · {a} without rules · {b} blind · {c} requests", {
+                r: uncovered.length,
+                a: s.gap_no_rules.length,
+                b: blind.length,
+                c: todoRequests.length,
+              })}
+            </span>
+          )}
+        </h2>
+        {!gapCount && (
+          <p className="muted" style={{ margin: 0 }}>
+            {s.last_interview
+              ? t("No gaps.")
+              : s.draft_id
+                ? t("Not assessed yet: the first interview is still a draft.")
+                : t("Not assessed yet: there is no completed interview.")}
+          </p>
+        )}
+        {uncovered.length > 0 && (
+          <div>
+            <h3 className="small strong">{t("Risks that no use case addresses")}</h3>
+            <ul className="plain-list">
+              {uncovered.map((g) => (
+                <li key={`${g.component}:${g.category}`}>
+                  <span className={`risk risk-${g.level ?? 0}`} title={t("Risk level {r}", { r: g.level ?? "–" })}>
+                    {g.score ?? "–"}
+                  </span>{" "}
+                  {g.component_name} / {threatLabel(g.category)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {s.gap_no_rules.length > 0 && (
+          <div>
+            <h3 className="small strong">{t("Linked use cases without rules")}</h3>
+            <ul className="plain-list">
+              {s.gap_no_rules.map((g) => (
+                <li key={g.code}>
+                  <span className="badge-gap">{t("No rules")}</span>{" "}
+                  <Link to={useCaseHref({ level: levelOf(g.code), code: g.code })}>
+                    <span className="mono small">{g.code}</span> {g.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {blind.length > 0 && (
+          <div>
+            <h3 className="small strong">{t("Linked use cases whose rules get none of their log sources")}</h3>
+            <GapGroups groups={blind} />
+          </div>
+        )}
+        {partial.length > 0 && (
+          <details>
+            <summary className="small strong">{t("Rules that get only some of their log sources ({n} use cases)", { n: partial.length })}</summary>
+            <GapGroups groups={partial} />
+          </details>
+        )}
+        {s.gap_requests.length > 0 && (
+          <div id="sys-requests">
+            <div className="section-head">
+              <h3 className="small strong">{t("Detection requests")}</h3>
+              <Link className="small" to={`/usecases/requests?system=${sid}`}>
+                {t("Show all requests")}
+              </Link>
+            </div>
+            <div className="req-filter" role="group" aria-label={t("Show requests with status")}>
+              {REQUEST_STATUSES.map((st) => (
+                <label key={st}>
+                  <input
+                    type="checkbox"
+                    checked={shown.has(st)}
+                    onChange={() =>
+                      setShown((x) => {
+                        const next = new Set(x);
+                        if (!next.delete(st)) next.add(st);
+                        return next;
+                      })
+                    }
+                  />
+                  {statusLabel(st)} ({s.gap_requests.filter((g) => g.status === st).length})
+                </label>
+              ))}
+            </div>
+            {s.gap_requests.some((g) => shown.has(g.status)) ? (
+              <div className="req-list">
+                {s.gap_requests
+                  .filter((g) => shown.has(g.status))
+                  .map((g) => (
+                    <RequestCard
+                      key={g.key}
+                      systemId={sid}
+                      r={g}
+                      where={`${g.component} / ${threatLabel(g.category)}`}
+                      canSetStatus={editor && !s.archived}
+                      onChanged={() => void sys.reload()}
+                    />
+                  ))}
+              </div>
+            ) : (
+              <p className="muted small" style={{ margin: "8px 0 0" }}>
+                {t("No detection requests with the chosen status.")}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="card table-card" aria-labelledby="ivh">
+        <h2 id="ivh" className="table-title">
+          {t("Interviews")}
+        </h2>
+        {s.interviews.length ? (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{t("Date")}</th>
+                <th>{t("Analyst")}</th>
+                <th>{t("Status")}</th>
+                <th>{t("Confirmed by / on")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.interviews.map((i) => (
+                <tr key={i.id}>
+                  <td>
+                    <Link to={`/interviews/${i.id}`}>{fmtDate(i.interview_date)}</Link>
+                    {i.completed_at && <span className="muted small"> · {t("completed {time}", { time: fmtTime(i.completed_at) })}</span>}
+                    {i.previous_id && (
+                      <div className="small muted">
+                        {t("Re-interview of {date}", {
+                          date: fmtDate(s.interviews.find((x) => x.id === i.previous_id)?.interview_date ?? null),
+                        })}
+                      </div>
+                    )}
+                  </td>
+                  <td>{i.analyst}</td>
+                  <td>
+                    <span className={`pill iv-${i.status}`}>{INTERVIEW_STATUS_LABEL[i.status]}</span>
+                  </td>
+                  <td>{i.confirmed_by ? `${i.confirmed_by} · ${fmtDate(i.confirmed_at)}` : <span className="muted">–</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted empty-flat">{t("No interview yet.")}</p>
+        )}
+      </section>
+
       {s.last_interview && (
+        <details className="fold">
+          <summary>
+            {t("Risks and use cases")} <span className="muted small">({t("{n} risks", { n: s.risks.length })})</span>
+          </summary>
         <RiskCoverage
           risks={s.risks}
           components={s.components}
@@ -153,8 +356,13 @@ export default function SystemDetail() {
             </span>
           }
         />
+        </details>
       )}
 
+      <details className="fold">
+        <summary>
+          {t("System and linked use cases")} <span className="muted small">({t("{n} use cases", { n: s.links.length })})</span>
+        </summary>
       <div className="split">
         <section className="card split-side stack-sm" aria-labelledby="ownh">
           <h2 id="ownh" className="h-sm">
@@ -180,20 +388,6 @@ export default function SystemDetail() {
               </Link>
             )}
           </div>
-          <dl className="stat-grid">
-            <div>
-              <dt>{t("Detection coverage")}</dt>
-              <dd>{pct(s.coverage)}</dd>
-            </div>
-            <div>
-              <dt>{t("Linked use cases")}</dt>
-              <dd>{s.links.length}</dd>
-            </div>
-            <div>
-              <dt>{t("Gaps")}</dt>
-              <dd>{gapCount}</dd>
-            </div>
-          </dl>
           <p className="muted small" style={{ margin: 0 }}>
             {t("Coverage = average weight of the linked L2 use cases and L3 rules; use cases without scored rules count as 0.")}
           </p>
@@ -247,129 +441,7 @@ export default function SystemDetail() {
         </section>
       </div>
 
-      <section className="card stack-sm" aria-labelledby="gaph">
-        <h2 id="gaph" className="h-sm">
-          {t("Gaps")}{" "}
-          {gapCount > 0 && (
-            <span className="muted small">
-              {t("{r} risks without use case · {a} without rules · {b} blind · {c} requests", {
-                r: uncovered.length,
-                a: s.gap_no_rules.length,
-                b: blind.length,
-                c: s.gap_requests.length,
-              })}
-            </span>
-          )}
-        </h2>
-        {!gapCount && (
-          <p className="muted" style={{ margin: 0 }}>
-            {s.last_interview
-              ? t("No gaps.")
-              : s.draft_id
-                ? t("Not assessed yet: the first interview is still a draft.")
-                : t("Not assessed yet: no completed interview.")}
-          </p>
-        )}
-        {uncovered.length > 0 && (
-          <div>
-            <h3 className="small strong">{t("Risks that no use case addresses")}</h3>
-            <ul className="plain-list">
-              {uncovered.map((g) => (
-                <li key={`${g.component}:${g.category}`}>
-                  <span className={`risk risk-${g.level ?? 0}`} title={t("Risk level {r}", { r: g.level ?? "–" })}>
-                    {g.score ?? "–"}
-                  </span>{" "}
-                  {g.component_name} / {threatLabel(g.category)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {s.gap_no_rules.length > 0 && (
-          <div>
-            <h3 className="small strong">{t("Linked use cases without rules")}</h3>
-            <ul className="plain-list">
-              {s.gap_no_rules.map((g) => (
-                <li key={g.code}>
-                  <span className="badge-gap">{t("No rules")}</span>{" "}
-                  <Link to={useCaseHref({ level: levelOf(g.code), code: g.code })}>
-                    <span className="mono small">{g.code}</span> {g.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {blind.length > 0 && (
-          <div>
-            <h3 className="small strong">{t("Linked use cases whose rules get none of their log sources")}</h3>
-            <GapGroups groups={blind} />
-          </div>
-        )}
-        {partial.length > 0 && (
-          <details>
-            <summary className="small strong">{t("Rules that get only some of their log sources ({n} use cases)", { n: partial.length })}</summary>
-            <GapGroups groups={partial} />
-          </details>
-        )}
-        {s.gap_requests.length > 0 && (
-          <div>
-            <h3 className="small strong">{t("Open detection requests")}</h3>
-            <ul className="plain-list">
-              {s.gap_requests.map((g, i) => (
-                <li key={i}>
-                  {g.text}{" "}
-                  <span className="muted small">
-                    · {g.component} / {threatLabel(g.category)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
-
-      <section className="card table-card" aria-labelledby="ivh">
-        <h2 id="ivh" className="table-title">
-          {t("Interviews")}
-        </h2>
-        {s.interviews.length ? (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{t("Date")}</th>
-                <th>{t("Analyst")}</th>
-                <th>{t("Status")}</th>
-                <th>{t("Confirmed by / on")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.interviews.map((i) => (
-                <tr key={i.id}>
-                  <td>
-                    <Link to={`/interviews/${i.id}`}>{fmtDate(i.interview_date)}</Link>
-                    {i.completed_at && <span className="muted small"> · {t("completed {time}", { time: fmtTime(i.completed_at) })}</span>}
-                    {i.previous_id && (
-                      <div className="small muted">
-                        {t("Re-interview of {date}", {
-                          date: fmtDate(s.interviews.find((x) => x.id === i.previous_id)?.interview_date ?? null),
-                        })}
-                      </div>
-                    )}
-                  </td>
-                  <td>{i.analyst}</td>
-                  <td>
-                    <span className={`pill iv-${i.status}`}>{INTERVIEW_STATUS_LABEL[i.status]}</span>
-                  </td>
-                  <td>{i.confirmed_by ? `${i.confirmed_by} · ${fmtDate(i.confirmed_at)}` : <span className="muted">–</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="muted empty-flat">{t("No interview yet.")}</p>
-        )}
-      </section>
+      </details>
 
       {editing && (
         <SystemDialog

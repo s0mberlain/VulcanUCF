@@ -109,7 +109,11 @@ export default function Verification() {
               <th>{t("Last verified")}</th>
               <th>{t("Due")}</th>
               <th>{t("State")}</th>
-              {editor && <th className="sr-only">{t("Actions")}</th>}
+              {editor && (
+                <th>
+                  <span className="sr-only">{t("Actions")}</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -134,11 +138,11 @@ export default function Verification() {
                 <td>
                   <StatusPill status={d.lifecycle_status} />
                 </td>
-                <td>
+                <td className="date">
                   {fmtDate(d.last_verified_at)}
                   {d.last_verified_by && <span className="muted"> · {d.last_verified_by}</span>}
                 </td>
-                <td>{fmtDate(d.due)}</td>
+                <td className="date">{fmtDate(d.due)}</td>
                 <td>
                   <span className="chips">
                     <DueBadge d={d} />

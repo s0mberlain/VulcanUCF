@@ -106,7 +106,7 @@ def export_workbook(db: Session) -> bytes:
     ws = wb.create_sheet("Introduction")
     ws["A1"] = "MaGMa UCF Tool"
     ws["A1"].font = TITLE_FONT
-    ws["A3"], ws["B3"] = "Exported from", "Vulcan (MaGMa use case management)"
+    ws["A3"], ws["B3"] = "Exported from", "Vulcan UCF web app"
     ws["A4"], ws["B4"] = "Date", date.today().isoformat()
     ws["A6"] = (
         "Classic layout with Excel formulas. Orange columns are extra fields of the web app "

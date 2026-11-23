@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import AttackPage from "./pages/AttackPage";
 import AuditLog from "./pages/AuditLog";
 import Dashboard from "./pages/Dashboard";
+import DetectionRequests from "./pages/DetectionRequests";
 import Drivers from "./pages/Drivers";
 import Account from "./pages/Account";
 import History from "./pages/History";
@@ -48,6 +49,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="usecases" element={<UseCases />} />
           <Route path="usecases/l3/:code" element={<RuleDetail />} />
+          <Route path="usecases/requests" element={<DetectionRequests />} />
           <Route path="verification" element={<Verification />} />
           <Route path="drivers" element={<Drivers />} />
           <Route path="systems" element={<Systems />} />

@@ -73,6 +73,8 @@ const SERVER_MESSAGES = [
   st("Add at least one component before completing the interview"),
   st("A detection request needs a text"),
   st("A detection request is tied to a threat that does not apply"),
+  st("Give a reason for a rejected or not feasible request"),
+  st("Detection request not found"),
   st("Unknown log source; reload the page"),
   st("Unknown L2 use case; reload the page"),
   st("Unknown L3 rule; reload the page"),

@@ -180,7 +180,9 @@ def test_risk_coverage_states(analyst):
     assert risks["spoofing"]["coverage"] == ("covered" if active else "gap")
     assert risks["spoofing"]["score"] == 12 and risks["spoofing"]["level"] == 3
     assert risks["repudiation"]["coverage"] == "gap"
-    assert risks["repudiation"]["requests"] == ["Log viewer"]
+    assert [(r["title"], r["status"]) for r in risks["repudiation"]["requests"]] == [
+        ("Log viewer", "open")
+    ]
     # the system page shows the same overview from the links
     complete(analyst, iv)
     d = analyst.get(f"/api/systems/{s['id']}").json()

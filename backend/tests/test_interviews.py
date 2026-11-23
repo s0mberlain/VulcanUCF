@@ -102,7 +102,8 @@ def save(client, iv: dict, expect: int = 200, **changes) -> dict:
         "requests": [
             {
                 "key": r["key"],
-                "text": r["text"],
+                "title": r["title"],
+                "description": r["description"],
                 "threat": {"component": r["component"], "category": r["category"]},
             }
             for r in stored["requests"]
@@ -393,15 +394,20 @@ def test_remove_add_and_detection_requests(analyst):
     assert removed["AO-ACC"]["reason"] == "covered elsewhere"
     pri_view = next(p for p in view["proposals"] if p["code"] == "AO-PRI")
     assert pri_view["manual"] is True and pri_view["auto"] is False
-    assert view["requests"] == [
-        {
-            "key": "r1",
-            "text": "Erkennung von Massen-Überweisungen",
-            "component": "web",
-            "component_name": "Web front end",
-            "category": "spoofing",
-        }
-    ]
+    assert len(view["requests"]) == 1
+    assert view["requests"][0] | {"status_at": None} == {
+        "key": "r1",
+        "title": "Erkennung von Massen-Überweisungen",
+        "description": "",
+        "component": "web",
+        "component_name": "Web front end",
+        "category": "spoofing",
+        "status": "open",
+        "status_note": "",
+        "link": None,
+        "status_by": None,
+        "status_at": None,
+    }
 
 
 def test_not_applicable_l1_is_not_proposed(admin, analyst):
@@ -571,7 +577,7 @@ def test_reinterview_copies_replaces_links_and_compares(analyst):
     v = second["view"]
     assert [c["name"] for c in v["components"]] == ["Web front end", "API"]
     assert sum(t["state"] == "applies" for c in v["components"] for t in c["threats"]) == 3
-    assert [r["text"] for r in v["requests"]] == ["Bulk transfers"]
+    assert [r["title"] for r in v["requests"]] == ["Bulk transfers"]
     # not before the previous interview (EC-15)
     early = (TODAY - timedelta(days=31)).isoformat()
     save(analyst, second, 422, interview_date=early)
@@ -674,9 +680,9 @@ def test_coverage_and_gaps(analyst):
     assert g["blind"] is True
     assert [r["rule_code"] for r in g["rules"]] == ["AO-ACC-01"]
     assert g["rules"][0]["missing"] == ["Database log"] and g["rules"][0]["partial"] is False
-    assert d["gap_requests"] == [
-        {"text": "Bulk transfers", "component": "Web front end", "category": "spoofing"}
-    ]
+    assert [
+        (g["title"], g["component"], g["category"], g["status"]) for g in d["gap_requests"]
+    ] == [("Bulk transfers", "Web front end", "spoofing", "open")]
     assert d["gaps"] == 3
 
 

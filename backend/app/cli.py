@@ -25,7 +25,7 @@ from app.db import make_engine
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     p = argparse.ArgumentParser(
-        prog="magma", description="Vulcan command line tools (MaGMa use case management)"
+        prog="magma", description="Vulcan UCF command line tools (MaGMa use case management)"
     )
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("migrate", help="apply database migrations and seed an empty database")

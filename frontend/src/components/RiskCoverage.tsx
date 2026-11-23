@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Detection, RiskCoverageState, RiskRow } from "../api";
+import { StatusChip } from "./RequestStatus";
 import { num } from "../lib/format";
 import { CountUp } from "./ui";
 import { STRIDE, STRIDE_LABEL, threatLabel } from "../lib/stride";
@@ -316,7 +317,7 @@ export function RiskCoverage({
                 ) : (
                   <p className="small muted" style={{ margin: 0 }}>
                     {r.coverage === "unrated"
-                      ? t("Rate likelihood and impact to get use case proposals.")
+                      ? t("Not rated yet: add likelihood and impact in step 2.")
                       : r.above_threshold
                         ? t("No use case addresses this risk.")
                         : t("No use case chosen (below the threshold).")}
@@ -326,7 +327,8 @@ export function RiskCoverage({
                   <ul className="plain-list small rcov-reqs">
                     {r.requests.map((q, i) => (
                       <li key={i}>
-                        <span className="chip chip-neutral">{t("Detection request")}</span> {q}
+                        <span className="chip chip-neutral">{t("Detection request")}</span> {q.title}{" "}
+                        <StatusChip status={q.status} />
                       </li>
                     ))}
                   </ul>

@@ -80,6 +80,13 @@ TEXTS: dict[str, dict[str, str]] = {
         "de": "Keine Detection Requests.",
         "nl": "Geen detectieverzoeken.",
     },
+    "note": {"en": "Note", "de": "Notiz", "nl": "Notitie"},
+    "implemented_by": {"en": "Implemented by", "de": "Umgesetzt mit", "nl": "Uitgevoerd met"},
+    "open": {"en": "Open", "de": "Offen", "nl": "Open"},
+    "in_progress": {"en": "In progress", "de": "In Bearbeitung", "nl": "In behandeling"},
+    "implemented": {"en": "Implemented", "de": "Umgesetzt", "nl": "Uitgevoerd"},
+    "rejected": {"en": "Rejected", "de": "Abgelehnt", "nl": "Afgewezen"},
+    "not_feasible": {"en": "Not feasible", "de": "Nicht umsetzbar", "nl": "Niet haalbaar"},
     "evidence": {"en": "Evidence", "de": "Nachweise", "nl": "Bewijsstukken"},
     "file": {"en": "File", "de": "Datei", "nl": "Bestand"},
     "uploaded": {"en": "Added", "de": "Hinzugefügt", "nl": "Toegevoegd"},
@@ -292,11 +299,21 @@ def build(out, system, lang: str, app_name: str) -> bytes:
     requests = view.get("requests", [])
     if requests:
         for r in requests:
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.set_text_color(0, 0, 0)
+            pdf.multi_cell(0, 5, _t(r["title"]), new_x="LMARGIN", new_y="NEXT")
             pdf.set_font("Helvetica", "B", 8.5)
             pdf.set_text_color(*MUTED)
             label = f"{tr('threat')}: {r['component_name']} - {tr(r['category'])}"
             pdf.cell(0, 5, _t(label), new_x="LMARGIN", new_y="NEXT")
-            pdf.p(r["text"], size=9)
+            state = f"{tr('status')}: {tr(r.get('status', 'open'))}"
+            if r.get("link"):
+                state += f" - {tr('implemented_by')}: {r['link']['code']}"
+            pdf.cell(0, 5, _t(state), new_x="LMARGIN", new_y="NEXT")
+            if r.get("status_note"):
+                pdf.p(f"{tr('note')}: {r['status_note']}", size=8.5, color=MUTED)
+            if r.get("description"):
+                pdf.p(r["description"], size=9)
     else:
         pdf.p(tr("no_requests"), color=MUTED)
 

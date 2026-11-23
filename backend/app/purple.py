@@ -193,7 +193,7 @@ def navigator_layer(name: str, cells: dict[str, str], version: str) -> dict:
         "name": name,
         "versions": {"attack": version.split(".")[0] if version else "", "layer": "4.5"},
         "domain": "enterprise-attack",
-        "description": "Purple team test outcomes (Vulcan)",
+        "description": "Purple team test outcomes (Vulcan UCF)",
         "techniques": [
             {
                 "techniqueID": tid,

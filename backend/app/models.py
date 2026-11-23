@@ -720,6 +720,44 @@ class SystemLink(Base):
     l3: Mapped[L3UseCase | None] = relationship()
 
 
+class RequestStatus(enum.StrEnum):
+    open = "open"
+    in_progress = "in_progress"
+    implemented = "implemented"
+    rejected = "rejected"
+    not_feasible = "not_feasible"
+
+
+class DetectionRequestState(Base):
+    """Implementation status of one detection request of a system.
+
+    The request itself (title, description, threat) lives in the interview data and is frozen
+    with the interview. Its status changes later, also after completion, and is shared by the
+    interviews of the system: a re-interview copies the request under the same `key`, so there
+    is one status per (system, key). No row means "open". Last write wins (PROJ-1).
+    """
+
+    __tablename__ = "detection_request_states"
+    __table_args__ = (UniqueConstraint("system_id", "key", name="uq_detection_request_system_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    system_id: Mapped[int] = mapped_column(ForeignKey("systems.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(40))
+    status: Mapped[RequestStatus] = mapped_column(
+        _enum(RequestStatus, "request_status"), default=RequestStatus.open
+    )
+    note: Mapped[str] = mapped_column(Text, default="")
+    # what implemented the request: an L2 use case or a single L3 rule. Plain ids (no foreign
+    # key) with the code as recorded, so a deleted use case shows as deleted and the code stays
+    link_l2_id: Mapped[int | None] = mapped_column(Integer)
+    link_l3_id: Mapped[int | None] = mapped_column(Integer)
+    link_code: Mapped[str | None] = mapped_column(String(64))
+    updated_by: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class StrideMapping(Base):
     """Admin-maintained STRIDE category -> L2 use case mapping that drives the proposals."""
 

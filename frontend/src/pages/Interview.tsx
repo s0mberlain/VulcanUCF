@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ApiError,
   api,
   type ComponentView,
+  type DetectionRequest,
   type Interview as IV,
   type InterviewAttachment,
   type InterviewCompare,
@@ -13,6 +14,7 @@ import {
   type L3,
   type Proposal,
   type RefItem,
+  type RequestStatus,
   type RiskRow,
   type Stride,
   type ThreatRef,
@@ -33,6 +35,7 @@ import {
 } from "../components/ui";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { RiskCoverage, useCaseHref, type RiskUseCase } from "../components/RiskCoverage";
+import { RequestCard, statusLabel } from "../components/RequestStatus";
 import { fmtDate, fmtTime, today } from "../lib/format";
 import { INTERVIEW_STATUS_LABEL, registerCustomThreats, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL, threatLabel } from "../lib/stride";
 import EvidenceFiles from "../components/EvidenceFiles";
@@ -44,6 +47,9 @@ type FormComponent = Form["components"][number];
 type FormThreat = FormComponent["threats"][number];
 
 const RATINGS = [1, 2, 3, 4, 5];
+/** The scales said in words, so "4" means the same to everyone in the room. */
+const LIKELIHOOD_LABEL = [t("rare"), t("unlikely"), t("possible"), t("likely"), t("almost certain")];
+const IMPACT_LABEL = [t("minor"), t("limited"), t("moderate"), t("major"), t("severe")];
 
 function newKey(): string {
   return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -88,7 +94,8 @@ function formOf(iv: IV): Form {
     ),
     requests: v.requests.map((r) => ({
       key: r.key,
-      text: r.text,
+      title: r.title,
+      description: r.description,
       threat: { component: r.component, category: r.category },
     })),
   };
@@ -138,12 +145,44 @@ function dependents(f: Form, match: (r: ThreatRef) => boolean): number {
   return f.requests.filter((r) => match(r.threat)).length + f.added.filter((a) => a.threats.length && a.threats.every(match)).length;
 }
 
+/** Titles of the requests on matching threats that are in progress or closed (PROJ-1). */
+function lockedRequests(f: Form, match: (r: ThreatRef) => boolean, status: Record<string, RequestStatus>): string[] {
+  return f.requests.filter((r) => match(r.threat) && (status[r.key] ?? "open") !== "open").map((r) => r.title);
+}
+
 function score(x: FormThreat): number | null {
   return x.state === "applies" && x.likelihood && x.impact ? x.likelihood * x.impact : null;
 }
 
 function incomplete(x: FormThreat): boolean {
   return x.state === "applies" && (!x.description.trim() || !x.likelihood || !x.impact);
+}
+
+/** Applying threats that still lack description, likelihood or impact, with the ids to jump to. */
+function incompleteList(f: Form): { comp: string; cat: string; label: string }[] {
+  return f.components.flatMap((c, i) =>
+    c.threats
+      .filter(incomplete)
+      .map((x) => ({ comp: c.key, cat: x.category, label: `${c.name.trim() || t("Component {n}", { n: i + 1 })} / ${threatLabel(x.category)}` })),
+  );
+}
+
+/** Open step 2 at a threat and put the cursor on the first missing field. */
+function jumpToThreat(comp: string, cat: string, retry = true) {
+  requestAnimationFrame(() => {
+    const el = document.getElementById(`thr-${comp}-${cat}`);
+    if (!el) {
+      // the component is folded: open it, then look again
+      const toggle = document.querySelector<HTMLButtonElement>(`#comp-${comp} .iv-toggle[aria-expanded="false"]`);
+      if (toggle && retry) {
+        toggle.click();
+        jumpToThreat(comp, cat, false);
+      }
+      return;
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.querySelector<HTMLElement>(".is-invalid")?.focus({ preventScroll: true });
+  });
 }
 
 function RiskScore({ value }: { value: number | null }) {
@@ -170,6 +209,10 @@ export default function Interview() {
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  // after a failed check the fields that are wrong turn red; before that they stay quiet
+  const [attempted, setAttempted] = useState(false);
+  const panel = useRef<HTMLDivElement>(null);
+  const [pendingJump, setPendingJump] = useState<{ comp: string; cat: string } | null>(null);
 
   useEffect(() => {
     if (loaded.data) {
@@ -204,6 +247,13 @@ export default function Interview() {
   /** Save the draft (with optional last-second changes); resolves to the new interview. */
   async function save(next?: Form): Promise<IV | null> {
     if (!iv || !form) return null;
+    const unnamed = (next ?? form).components.findIndex((c) => !c.name.trim());
+    if (unnamed >= 0) {
+      setAttempted(true);
+      setStep(2);
+      setError(t("Component {n} needs a name.", { n: unnamed + 1 }));
+      return null;
+    }
     const body = pruned(next ?? form);
     setBusy(true);
     setError(null);
@@ -243,6 +293,16 @@ export default function Interview() {
       setConflict(false);
       setError(null);
       setDirty(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  /** A status was changed (PROJ-1): take over the statuses only; an unsaved draft stays as it is. */
+  async function refreshStatuses() {
+    if (!iv) return;
+    try {
+      const fresh = await api.interview(iv.id);
+      setIv((x) => (x ? { ...x, view: { ...x.view, requests: fresh.view.requests, risks: fresh.view.risks } } : x));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -289,6 +349,7 @@ export default function Interview() {
       return;
     }
     if (n > 2 && (dupNames.size || form.components.some((c) => !c.name.trim()))) {
+      setAttempted(true);
       setError(t("Every component needs a name, and names must be unique."));
       setStep(2);
       return;
@@ -300,7 +361,24 @@ export default function Interview() {
       if (!ok) return;
     }
     setStep(n);
+    // the new step gets the focus, so a keyboard user does not have to tab back through the header
+    requestAnimationFrame(() => {
+      document.getElementById(`step-tab-${n}`)?.scrollIntoView({ block: "nearest", inline: "center" });
+      panel.current?.focus({ preventScroll: true });
+    });
   }
+
+  /** Jump from a message to the threat that is incomplete. */
+  function jump(comp: string, cat: string) {
+    setStep(2);
+    setPendingJump({ comp, cat });
+  }
+  useEffect(() => {
+    if (pendingJump && step === 2) {
+      jumpToThreat(pendingJump.comp, pendingJump.cat);
+      setPendingJump(null);
+    }
+  }, [pendingJump, step]);
 
   async function complete() {
     if (!iv || !form) return;
@@ -315,25 +393,33 @@ export default function Interview() {
       return;
     }
     if (missing.length) {
-      setError(
-        t("Complete description, likelihood and impact of these threats: {list}", {
-          list: missing.map((m) => `${m.component} / ${threatLabel(m.category)}`).join(", "),
-        }),
-      );
+      setAttempted(true);
+      setError(t("Complete description, likelihood and impact of the marked threats before you complete the interview."));
       setStep(2);
+      const first = incompleteList(form)[0];
+      if (first) setPendingJump({ comp: first.comp, cat: first.cat });
       return;
     }
     const n = fresh.view.proposals.length;
+    const gaps = fresh.view.proposals.filter((p) => p.detection === "no_rules").length;
+    const reqs = fresh.view.requests.length;
     const ok = await confirmDialog(
       n
-        ? t("Complete the interview? {n} use cases will be linked to {system}, replacing the links of the previous interview. The interview becomes read-only.", {
+        ? t("{n} use cases will be linked to {system}, replacing the links of the previous interview. The interview becomes read-only.", {
             n,
             system: fresh.system_name,
           })
-        : t("Complete the interview without accepted use cases? {system} will have no linked use cases. The interview becomes read-only.", {
-            system: fresh.system_name,
-          }),
-      { confirmLabel: t("Complete interview") },
+        : t("{system} will have no linked use cases. The interview becomes read-only.", { system: fresh.system_name }),
+      {
+        title: n ? t("Complete the interview and link {n} use cases?", { n }) : t("Complete the interview without use cases?"),
+        confirmLabel: t("Complete interview"),
+        body: (
+          <ul className="plain-list">
+            <li>{gaps ? t("{n} of them have no active rule and become gaps of the system.", { n: gaps }) : t("All linked use cases have an active rule.")}</li>
+            <li>{reqs ? t("{n} detection requests are created.", { n: reqs }) : t("No detection requests are created.")}</li>
+          </ul>
+        ),
+      },
     );
     if (!ok) return;
     try {
@@ -343,6 +429,20 @@ export default function Interview() {
       setDirty(false);
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  /** A new draft, pre-filled from the last completed interview of this system. */
+  async function reinterview() {
+    if (!iv) return;
+    setBusy(true);
+    try {
+      const next = await api.startInterview(iv.system_id);
+      navigate(`/interviews/${next.id}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -372,11 +472,12 @@ export default function Interview() {
   }
 
   const pdf = api.interviewPdfUrl(iv.id, getLang());
+  const missingNow = incompleteList(form);
 
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/systems">{t("Systems")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
+        <Link to="/systems">{t("Threat modelling")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
         <span>{t("Interview {date}", { date: fmtDate(iv.interview_date) })}</span>
       </nav>
       <header className="page-header">
@@ -385,7 +486,15 @@ export default function Interview() {
           <div className="subtitle">
             <span className={`pill iv-${iv.status}`}>{INTERVIEW_STATUS_LABEL[iv.status]}</span>{" "}
             {t("Analyst {name}", { name: iv.analyst })}
-            {draft && iv.updated_at && ` · ${t("last saved {time} by {user}", { time: fmtTime(iv.updated_at), user: iv.updated_by })}`}
+            {draft &&
+              (dirty ? (
+                <>
+                  {" · "}
+                  <strong className="unsaved-note">{t("Unsaved changes")}</strong>
+                </>
+              ) : (
+                iv.updated_at && ` · ${t("saved {time} by {user}", { time: fmtTime(savedAt ?? iv.updated_at), user: iv.updated_by })}`
+              ))}
             {!draft && iv.completed_at && ` · ${t("completed {time} by {user}", { time: fmtTime(iv.completed_at), user: iv.completed_by ?? "" })}`}
           </div>
         </div>
@@ -393,6 +502,11 @@ export default function Interview() {
           <a className="btn" href={pdf} download>
             {t("Export PDF")}
           </a>
+          {!draft && editor && !iv.archived && (
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void reinterview()}>
+              {t("Start re-interview")}
+            </button>
+          )}
           {canEdit && (
             <>
               <button type="button" className="btn" disabled={busy || !dirty} onClick={() => void save()}>
@@ -400,9 +514,9 @@ export default function Interview() {
               </button>
               <button
                 type="button"
-                className={"btn" + (step === 3 ? " btn-primary" : "")}
+                className={"btn" + (step === 3 && !missingNow.length ? " btn-primary" : "")}
                 disabled={busy || !form.components.length}
-                title={form.components.length ? undefined : t("Add at least one component before you continue.")}
+                aria-describedby={!form.components.length ? "complete-why" : undefined}
                 onClick={() => void complete()}
               >
                 {t("Complete interview")}
@@ -412,19 +526,35 @@ export default function Interview() {
         </div>
       </header>
 
+      {!draft && editor && !iv.archived && (
+        <p className="muted small" style={{ margin: 0 }}>
+          {t("A re-interview starts as a copy of this interview, so you only change what is different.")}
+        </p>
+      )}
+      {canEdit && !form.components.length && (
+        <p id="complete-why" className="muted small" style={{ margin: 0 }}>
+          {t("Add at least one component before you complete the interview.")}
+        </p>
+      )}
       {conflict ? (
         <ConflictBox message={error} busy={busy} onKeepMine={() => void keepMine()} onLoadTheirs={loadTheirs} />
       ) : (
         error && (
           <div className="form-error-box" role="alert">
             <span>{error}</span>
+            {attempted && missingNow.length > 0 && (
+              <ul className="plain-list jump-list">
+                {missingNow.map((m) => (
+                  <li key={`${m.comp}-${m.cat}`}>
+                    <button type="button" className="link-btn" onClick={() => jump(m.comp, m.cat)}>
+                      {m.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )
-      )}
-      {savedAt && !dirty && !error && draft && (
-        <p className="saved-tick small" role="status">
-          {t("Draft saved.")}
-        </p>
       )}
       {backup.offer && canEdit && (
         <DraftRestoreBanner
@@ -441,18 +571,36 @@ export default function Interview() {
 
       {draft ? (
         <>
-          <div className="tabs" role="tablist" aria-label={t("Interview steps")}>
+          <div
+            className="tabs"
+            role="tablist"
+            aria-label={t("Interview steps")}
+            onKeyDown={(e) => {
+              const next = e.key === "ArrowRight" ? Math.min(3, step + 1) : e.key === "ArrowLeft" ? Math.max(1, step - 1) : 0;
+              if (!next || next === step) return;
+              e.preventDefault();
+              void goto(next).then(() => document.getElementById(`step-tab-${next}`)?.focus());
+            }}
+          >
             {[t("1 · Context"), t("2 · Components and threats"), t("3 · Risks and use cases")].map((label, i) => (
               <button
                 key={label}
+                id={`step-tab-${i + 1}`}
                 type="button"
                 role="tab"
                 aria-selected={step === i + 1}
+                aria-controls="step-panel"
+                tabIndex={step === i + 1 ? 0 : -1}
                 className={"tab" + (step === i + 1 ? " active" : "")}
                 title={i === 2 && canEdit && step !== 3 ? t("Saves the draft and shows the proposals") : undefined}
                 onClick={() => void goto(i + 1)}
               >
                 {label}
+                {i === 1 && missingNow.length > 0 && (
+                  <span className="tab-count tab-count-warn" title={t("{n} threats are incomplete", { n: missingNow.length })}>
+                    {t("{n} incomplete", { n: missingNow.length })}
+                  </span>
+                )}
                 {i === 2 && iv.view.log_source_mismatch.length > 0 && (
                   <span className="tab-count" title={t("Held back: log sources do not match ({n} use cases)", { n: iv.view.log_source_mismatch.length })}>
                     {t("{n} held back", { n: iv.view.log_source_mismatch.length })}
@@ -461,6 +609,7 @@ export default function Interview() {
               </button>
             ))}
           </div>
+          <div id="step-panel" role="tabpanel" aria-labelledby={`step-tab-${step}`} tabIndex={-1} ref={panel} className="step-panel">
           {step === 1 && (
             <StepContext
               iv={iv}
@@ -472,9 +621,28 @@ export default function Interview() {
             />
           )}
           {step === 2 && (
-            <StepComponents form={form} update={update} readOnly={!canEdit} dupNames={dupNames} />
+            <StepComponents
+              form={form}
+              update={update}
+              readOnly={!canEdit}
+              dupNames={dupNames}
+              showErrors={attempted}
+              requestStatus={Object.fromEntries(iv.view.requests.map((r) => [r.key, r.status]))}
+            />
           )}
-          {step === 3 && <StepProposals iv={iv} readOnly={!canEdit} saveWith={saveWith} busy={busy} />}
+          {step === 3 && (
+            <StepProposals
+              iv={iv}
+              missing={missingNow}
+              onJump={jump}
+              readOnly={!canEdit}
+              canSetStatus={editor}
+              saveWith={saveWith}
+              busy={busy}
+              onStatusChanged={() => void refreshStatuses()}
+            />
+          )}
+          </div>
           {canEdit && (
             <div className="row-actions">
               <button type="button" className="btn btn-danger" onClick={() => void removeDraft()}>
@@ -493,9 +661,23 @@ export default function Interview() {
               )}
             </div>
           )}
+          {canEdit && dirty && (
+            <div className="unsaved-bar" role="status">
+              <span>{t("Unsaved changes")}</span>
+              <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void save()}>
+                {busy ? t("Saving…") : t("Save draft")}
+              </button>
+            </div>
+          )}
         </>
       ) : (
-        <CompletedView iv={iv} editor={editor} onChange={(x) => setIv(x)} onAttachments={setAttachments} />
+        <CompletedView
+          iv={iv}
+          editor={editor}
+          onChange={(x) => setIv(x)}
+          onAttachments={setAttachments}
+          onStatusChanged={() => void refreshStatuses()}
+        />
       )}
     </>
   );
@@ -611,15 +793,23 @@ function StepComponents({
   update,
   readOnly,
   dupNames,
+  showErrors,
+  requestStatus,
 }: {
   form: Form;
   update: (fn: (f: Form) => Form) => void;
   readOnly: boolean;
   dupNames: Set<string>;
+  /** a check failed before: empty required fields show as wrong; until then they stay quiet */
+  showErrors: boolean;
+  /** request key -> status: a request that is no longer open keeps its threat (PROJ-1) */
+  requestStatus: Record<string, RequestStatus>;
 }) {
   const refs = useLoad<RefItem[]>(() => api.refs("log_source"));
   const techniques = useLoad(() => api.attackTechniques());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+  const [describing, setDescribing] = useState<Set<string>>(new Set());
   const [extraRefs, setExtraRefs] = useState<RefItem[]>([]);
   const options = [...(refs.data ?? []), ...extraRefs]
     .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
@@ -628,9 +818,32 @@ function StepComponents({
   const setComp = (key: string, patch: Partial<FormComponent>) =>
     update((f) => ({ ...f, components: f.components.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
 
+  /** Names the requests in progress or closed that hang on the threats and stops the removal. */
+  async function blockedByRequests(match: (r: ThreatRef) => boolean): Promise<boolean> {
+    const titles = lockedRequests(form, match, requestStatus);
+    if (!titles.length) return false;
+    await confirmDialog(
+      t("This cannot be removed: detection requests that are not open belong to it. Set them back to open or delete them first."),
+      {
+        title: t("Detection requests are tied to this threat"),
+        confirmLabel: t("OK"),
+        cancelLabel: t("Close"),
+        body: (
+          <ul className="plain-list">
+            {titles.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        ),
+      },
+    );
+    return true;
+  }
+
   async function setThreat(c: FormComponent, cat: Stride, patch: Partial<FormThreat>) {
     const cur = threatOf(c, cat);
     if (patch.state && patch.state !== "applies" && cur.state === "applies") {
+      if (await blockedByRequests((r) => r.component === c.key && r.category === cat)) return;
       const n = dependents(form, (r) => r.component === c.key && r.category === cat);
       if (
         n &&
@@ -646,6 +859,7 @@ function StepComponents({
 
   async function removeCustom(c: FormComponent, x: CustomThreatForm) {
     const cat = `custom:${x.key}`;
+    if (await blockedByRequests((r) => r.component === c.key && r.category === cat)) return;
     const n = dependents(form, (r) => r.component === c.key && r.category === cat);
     const ok = await confirmDialog(
       n
@@ -657,6 +871,7 @@ function StepComponents({
   }
 
   async function removeComp(c: FormComponent) {
+    if (await blockedByRequests((r) => r.component === c.key)) return;
     const n = dependents(form, (r) => r.component === c.key);
     const ok = await confirmDialog(
       n
@@ -667,26 +882,57 @@ function StepComponents({
     if (ok) update((f) => ({ ...f, components: f.components.filter((x) => x.key !== c.key) }));
   }
 
-  const addComp = () =>
+  const addComp = () => {
+    const key = newKey();
     update((f) => ({
       ...f,
-      components: [...f.components, { key: newKey(), name: "", description: "", log_source_ids: [], threats: [], custom_threats: [] }],
+      components: [...f.components, { key, name: "", description: "", log_source_ids: [], threats: [], custom_threats: [] }],
     }));
+    // the cursor goes to the name of the new component
+    requestAnimationFrame(() => document.getElementById(`comp-name-${key}`)?.focus());
+  };
+
+  /** Fold the finished component and move on to the next one (or to "+ Component"). */
+  function nextComp(c: FormComponent, idx: number) {
+    setCollapsed((s) => new Set(s).add(c.key));
+    const next = form.components[idx + 1];
+    requestAnimationFrame(() => {
+      if (next) {
+        setCollapsed((s) => {
+          const n = new Set(s);
+          n.delete(next.key);
+          return n;
+        });
+        document.getElementById(`comp-${next.key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else document.getElementById("add-component")?.focus();
+    });
+  }
+
+  /** Everything not decided yet in this component becomes "does not apply". */
+  const setUndecided = (c: FormComponent) =>
+    setComp(c.key, {
+      threats: STRIDE.map((cat) => {
+        const x = threatOf(c, cat);
+        return x.state === "not_discussed" ? { ...x, state: "does_not_apply" as ThreatState } : x;
+      }),
+    });
 
   return (
     <div className="stack">
       <ErrorNote error={refs.error} />
-      {!form.components.length && (
-        <div className="note-box">
-          {t("Split the system into a few components (e.g. web front end, API, database, admin access) and go through the six STRIDE categories for each.")}
-        </div>
-      )}
+      <p className="muted small" style={{ margin: 0 }}>
+        {form.components.length
+          ? t("For each STRIDE category decide: does the threat apply? Only threats that apply are rated and propose use cases.")
+          : t("Split the system into a few components (e.g. web front end, API, database, admin access). For each STRIDE category decide: does the threat apply? Only threats that apply are rated and propose use cases.")}
+      </p>
       {form.components.map((c, idx) => {
         const open = !collapsed.has(c.key);
         const dup = dupNames.has(c.name.trim().toLowerCase());
         const bad = c.threats.filter(incomplete).length + (c.custom_threats ?? []).filter(customIncomplete).length;
+        const nameBad = !c.name.trim() && (showErrors || touched.has(c.key));
+        const undecided = STRIDE.filter((cat) => threatOf(c, cat).state === "not_discussed").length;
         return (
-          <section key={c.key} className="card stack-sm iv-comp" aria-label={c.name || t("Component {n}", { n: idx + 1 })}>
+          <section key={c.key} id={`comp-${c.key}`} className="card stack-sm iv-comp" aria-label={c.name || t("Component {n}", { n: idx + 1 })}>
             <div className="section-head">
               <button
                 type="button"
@@ -701,7 +947,9 @@ function StepComponents({
                   })
                 }
               >
-                {open ? "▾" : "▸"} {c.name || t("Component {n}", { n: idx + 1 })}
+                <span className="iv-toggle-name" title={c.name || undefined}>
+                  {open ? "▾" : "▸"} {c.name || t("Component {n}", { n: idx + 1 })}
+                </span>
               </button>
               <span className="small muted">
                 {t("{n} threats apply", { n: c.threats.filter((x) => x.state === "applies").length + (c.custom_threats ?? []).length })}
@@ -715,7 +963,7 @@ function StepComponents({
               <span className="grow" />
               {!readOnly && (
                 <button type="button" className="btn btn-sm" onClick={() => void removeComp(c)}>
-                  {t("Remove")}
+                  {t("Remove component")}
                 </button>
               )}
             </div>
@@ -725,17 +973,21 @@ function StepComponents({
                   <label className="field">
                     {t("Component name")} *
                     <input
-                      className={"input" + (dup || !c.name.trim() ? " is-invalid" : "")}
+                      id={`comp-name-${c.key}`}
+                      className={"input" + (dup || nameBad ? " is-invalid" : "")}
                       value={c.name}
                       maxLength={255}
                       disabled={readOnly}
-                      aria-invalid={dup || !c.name.trim()}
+                      aria-invalid={dup || nameBad}
                       onChange={(e) => setComp(c.key, { name: e.target.value })}
+                      onBlur={() => setTouched((x) => new Set(x).add(c.key))}
                     />
                     {dup && <span className="field-error">{t("Another component has this name.")}</span>}
+                    {nameBad && !dup && <span className="field-error">{t("Required")}</span>}
                   </label>
                   <MultiSelect
-                    label={t("Log sources the component delivers")}
+                    label={t("Log sources of this component")}
+                    hint={t("Which logs does it send to the SIEM? Use cases are checked against them.")}
                     options={options}
                     value={c.log_source_ids.map(String)}
                     disabled={readOnly}
@@ -747,36 +999,71 @@ function StepComponents({
                     }}
                   />
                 </div>
-                <label className="field">
-                  {t("Description")}
-                  <textarea
-                    className="input textarea"
-                    rows={2}
-                    maxLength={10000}
-                    value={c.description}
-                    disabled={readOnly}
-                    onChange={(e) => setComp(c.key, { description: e.target.value })}
-                  />
-                </label>
+                {c.description || describing.has(c.key) ? (
+                  <label className="field">
+                    {t("Description (optional)")}
+                    <textarea
+                      id={`comp-desc-${c.key}`}
+                      className="input textarea"
+                      rows={2}
+                      maxLength={10000}
+                      value={c.description}
+                      disabled={readOnly}
+                      placeholder={t("What it does and who uses it")}
+                      onChange={(e) => setComp(c.key, { description: e.target.value })}
+                    />
+                  </label>
+                ) : (
+                  !readOnly && (
+                    <div>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => {
+                          setDescribing((x) => new Set(x).add(c.key));
+                          requestAnimationFrame(() => document.getElementById(`comp-desc-${c.key}`)?.focus());
+                        }}
+                      >
+                        {t("+ Add a description")}
+                      </button>
+                    </div>
+                  )
+                )}
                 <div className="iv-threats">
                   {STRIDE.map((cat) => {
                     const x = threatOf(c, cat);
                     const s = score(x);
                     const inc = incomplete(x);
                     return (
-                      <div key={cat} className={"iv-threat" + (inc ? " is-incomplete" : "")}>
+                      <div key={cat} id={`thr-${c.key}-${cat}`} className={"iv-threat" + (inc ? " is-incomplete" : "") + (x.state === "not_discussed" ? " is-undecided" : "")}>
                         <div className="iv-threat-head">
                           <div>
-                            <strong>{STRIDE_LABEL[cat]}</strong>
-                            <div className="small muted">{STRIDE_HINT[cat]}</div>
+                            <strong title={STRIDE_HINT[cat]}>{STRIDE_LABEL[cat]}</strong>
+                            {x.state !== "does_not_apply" && <div className="small muted">{STRIDE_HINT[cat]}</div>}
                           </div>
-                          <div className="view-toggle" role="radiogroup" aria-label={STRIDE_LABEL[cat]}>
+                          <div
+                            className="view-toggle"
+                            role="radiogroup"
+                            aria-label={STRIDE_LABEL[cat]}
+                            onKeyDown={(e) => {
+                              const order: ThreatState[] = ["applies", "does_not_apply", "not_discussed"];
+                              const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+                              if (!d || readOnly) return;
+                              e.preventDefault();
+                              const next = order[(order.indexOf(x.state) + d + order.length) % order.length]!;
+                              void setThreat(c, cat, { state: next });
+                              requestAnimationFrame(() =>
+                                document.querySelector<HTMLElement>(`#thr-${c.key}-${cat} [role=radio][aria-checked=true]`)?.focus(),
+                              );
+                            }}
+                          >
                             {(["applies", "does_not_apply", "not_discussed"] as ThreatState[]).map((st) => (
                               <button
                                 key={st}
                                 type="button"
                                 role="radio"
                                 aria-checked={x.state === st}
+                                tabIndex={x.state === st ? 0 : -1}
                                 disabled={readOnly}
                                 className={"filter-chip" + (x.state === st ? " active" : "")}
                                 onClick={() => void setThreat(c, cat, { state: st })}
@@ -791,7 +1078,8 @@ function StepComponents({
                             <label className="field grow-2">
                               {t("Threat description")} *
                               <textarea
-                                className={"input textarea" + (inc && !x.description.trim() ? " is-invalid" : "")}
+                                placeholder={t("What could happen to this component, and how?")}
+                                className={"input textarea" + (inc && !x.description.trim() && showErrors ? " is-invalid" : "")}
                                 rows={2}
                                 maxLength={10000}
                                 value={x.description}
@@ -802,7 +1090,7 @@ function StepComponents({
                             <label className="field">
                               {t("Likelihood (1–5)")} *
                               <select
-                                className={"input" + (inc && !x.likelihood ? " is-invalid" : "")}
+                                className={"input" + (inc && !x.likelihood && showErrors ? " is-invalid" : "")}
                                 value={x.likelihood ?? ""}
                                 disabled={readOnly}
                                 onChange={(e) =>
@@ -812,7 +1100,7 @@ function StepComponents({
                                 <option value="">–</option>
                                 {RATINGS.map((n) => (
                                   <option key={n} value={n}>
-                                    {n}
+                                    {n} · {LIKELIHOOD_LABEL[n - 1]}
                                   </option>
                                 ))}
                               </select>
@@ -820,7 +1108,7 @@ function StepComponents({
                             <label className="field">
                               {t("Impact (1–5)")} *
                               <select
-                                className={"input" + (inc && !x.impact ? " is-invalid" : "")}
+                                className={"input" + (inc && !x.impact && showErrors ? " is-invalid" : "")}
                                 value={x.impact ?? ""}
                                 disabled={readOnly}
                                 onChange={(e) =>
@@ -830,20 +1118,28 @@ function StepComponents({
                                 <option value="">–</option>
                                 {RATINGS.map((n) => (
                                   <option key={n} value={n}>
-                                    {n}
+                                    {n} · {IMPACT_LABEL[n - 1]}
                                   </option>
                                 ))}
                               </select>
                             </label>
                             <div className="field">
-                              {t("Risk score")}
+                              <span title={t("Likelihood × impact")}>{t("Risk score")}</span>
                               <div className="iv-score" aria-live="polite">
                                 <RiskScore value={s} />
                               </div>
                             </div>
                             {inc && (
                               <span className="field-error iv-inc">
-                                {t("Incomplete: description, likelihood and impact are needed.")}
+                                {t("Still missing: {list}.", {
+                                  list: [
+                                    !x.description.trim() && t("description"),
+                                    !x.likelihood && t("likelihood"),
+                                    !x.impact && t("impact"),
+                                  ]
+                                    .filter(Boolean)
+                                    .join(", "),
+                                })}
                               </span>
                             )}
                           </div>
@@ -859,6 +1155,19 @@ function StepComponents({
                   onChange={(list) => setComp(c.key, { custom_threats: list })}
                   onRemove={(x) => void removeCustom(c, x)}
                 />
+                {!readOnly && (
+                  <div className="row-actions start iv-comp-actions">
+                    {undecided > 0 && (
+                      <button type="button" className="btn btn-sm" onClick={() => setUndecided(c)}>
+                        {t("Mark {n} undecided as “does not apply”", { n: undecided })}
+                      </button>
+                    )}
+                    <span className="grow" />
+                    <button type="button" className="btn btn-sm" onClick={() => nextComp(c, idx)}>
+                      {idx < form.components.length - 1 ? t("Collapse and go to the next component") : t("Collapse this component")}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </section>
@@ -866,8 +1175,8 @@ function StepComponents({
       })}
       {!readOnly && (
         <div>
-          <button type="button" className="btn" onClick={addComp}>
-            {t("+ Component")}
+          <button type="button" id="add-component" className="btn" onClick={addComp}>
+            {t("+ Add component")}
           </button>
         </div>
       )}
@@ -907,12 +1216,12 @@ function CustomThreats({
         <div>
           <strong>{t("Further threats (MITRE ATT&CK)")}</strong>
           <div className="small muted">
-            {t("Optional: a detailed threat beyond STRIDE, linked to ATT&CK techniques. Use cases whose rules cover a technique are proposed.")}
+            {t("Optional. Use cases whose rules cover one of the techniques are proposed.")}
           </div>
         </div>
         {!readOnly && (
           <button type="button" className="btn btn-sm" onClick={add}>
-            {t("+ Custom threat")}
+            {t("+ Add ATT&CK threat")}
           </button>
         )}
       </div>
@@ -943,7 +1252,7 @@ function CustomThreats({
                   <option value="">–</option>
                   {RATINGS.map((n) => (
                     <option key={n} value={n}>
-                      {n}
+                      {n} · {LIKELIHOOD_LABEL[n - 1]}
                     </option>
                   ))}
                 </select>
@@ -959,7 +1268,7 @@ function CustomThreats({
                   <option value="">–</option>
                   {RATINGS.map((n) => (
                     <option key={n} value={n}>
-                      {n}
+                      {n} · {IMPACT_LABEL[n - 1]}
                     </option>
                   ))}
                 </select>
@@ -1005,6 +1314,63 @@ function CustomThreats({
         );
       })}
     </div>
+  );
+}
+
+/** Edit title, description and threat of a detection request in a draft (PROJ-1). */
+function RequestEditDialog({
+  r,
+  threatOptions,
+  toRef,
+  onClose,
+  onSave,
+}: {
+  r: DetectionRequest;
+  threatOptions: { value: string; label: string }[];
+  toRef: (value: string) => ThreatRef;
+  onClose: () => void;
+  onSave: (patch: { title: string; description: string; threat: ThreatRef }) => void;
+}) {
+  const [title, setTitle] = useState(r.title);
+  const [description, setDescription] = useState(r.description);
+  const [threat, setThreat] = useState(`${r.component}:${r.category}`);
+  return (
+    <Modal title={t("Edit detection request")} open onClose={onClose}>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (title.trim()) onSave({ title: title.trim(), description: description.trim(), threat: toRef(threat) });
+        }}
+      >
+        <label className="field">
+          {t("Title")}
+          <input className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
+        </label>
+        <label className="field">
+          {t("Threat")}
+          <select className="input" value={threat} onChange={(e) => setThreat(e.target.value)}>
+            {threatOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          {t("Description (what should be detected and why)")}
+          <textarea className="textarea" rows={5} value={description} maxLength={10000} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={!title.trim()}>
+            {t("Save")}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -1076,14 +1442,24 @@ function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
 
 function StepProposals({
   iv,
+  missing,
+  onJump,
   readOnly,
+  canSetStatus,
   saveWith,
   busy,
+  onStatusChanged,
 }: {
   iv: IV;
+  /** threats of step 2 that still lack description, likelihood or impact */
+  missing: { comp: string; cat: string; label: string }[];
+  onJump: (comp: string, cat: string) => void;
   readOnly: boolean;
+  /** the status can be changed also when the draft itself is read-only */
+  canSetStatus: boolean;
   saveWith: (fn: (f: Form) => Form) => Promise<IV | null>;
   busy: boolean;
+  onStatusChanged: () => void;
 }) {
   const v = iv.view;
   const [removing, setRemoving] = useState<Proposal | null>(null);
@@ -1091,7 +1467,12 @@ function StepProposals({
   const [mode, setMode] = useState<"risk" | "usecase">("risk");
   const [showBelow, setShowBelow] = useState(false);
   const [showMismatch, setShowMismatch] = useState(true);
-  const [request, setRequest] = useState<{ text: string; threat: string }>({ text: "", threat: "" });
+  // review list: which accepted use cases are shown, which are ticked for a bulk action
+  const [only, setOnly] = useState<"all" | "norule">("all");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<Proposal[] | null>(null);
+  const [request, setRequest] = useState<{ title: string; description: string; threat: string }>({ title: "", description: "", threat: "" });
+  const [editingRequest, setEditingRequest] = useState<DetectionRequest | null>(null);
   const threatOptions = v.components.flatMap((c) =>
     c.threats
       .filter((x) => x.state === "applies")
@@ -1154,6 +1535,35 @@ function StepProposals({
       };
     });
   const [unassigning, setUnassigning] = useState<{ r: RiskRow; u: RiskUseCase } | null>(null);
+  const noRule = (p: Proposal) => p.detection === "no_rules";
+  const shownProposals = only === "norule" ? v.proposals.filter(noRule) : v.proposals;
+  const pickedProposals = v.proposals.filter((p) => picked.has(proposalKey(p)));
+  const gapCount = v.proposals.filter(noRule).length;
+  /** Remove several accepted use cases at once, with one reason. */
+  const removeMany = (list: Proposal[], reason: string) =>
+    saveWith((f) => {
+      const l2 = new Set(list.filter((p) => p.level !== "L3").map((p) => p.l2_id));
+      const l3 = new Set<number>(list.flatMap((p) => (p.level === "L3" && p.l3_id ? [p.l3_id] : [])));
+      return {
+        ...f,
+        added: f.added.filter((a) => !(a.l3_id ? l3.has(a.l3_id) : l2.has(a.l2_id ?? -1))),
+        removed: [...f.removed.filter((r) => !l2.has(r.l2_id)), ...[...l2].map((id) => ({ l2_id: id, reason }))],
+      };
+    });
+  /** Start a detection request from a use case that nothing detects: the threat and a title are filled in. */
+  function requestFrom(p: Proposal) {
+    const src = p.sources[0];
+    setRequest({
+      title: t("Detect: {name}", { name: p.name }),
+      description: "",
+      threat: src ? `${src.component}:${src.category}` : "",
+    });
+    requestAnimationFrame(() => {
+      const el = document.getElementById("req-title");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.focus({ preventScroll: true });
+    });
+  }
   const switcher = (
     <div className="view-switch" role="group" aria-label={t("View")}>
       <button type="button" className={mode === "risk" ? "active" : ""} aria-pressed={mode === "risk"} onClick={() => setMode("risk")}>
@@ -1183,11 +1593,32 @@ function StepProposals({
           })}
         </div>
       )}
-      {(v.no_detection?.length ?? 0) > 0 && (
+      {missing.length > 0 && (
+        <div className="note-box" role="status">
+          {t("{n} threats are not rated yet, so they propose nothing: ", { n: missing.length })}
+          {missing.map((m, i) => (
+            <span key={`${m.comp}-${m.cat}`}>
+              {i > 0 && ", "}
+              <button type="button" className="link-btn" onClick={() => onJump(m.comp, m.cat)}>
+                {m.label}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {gapCount > 0 && (
         <div className="note-box">
-          {t("Nothing detects these accepted use cases yet (no active rule): {list}. They become gaps of the system.", {
-            list: (v.no_detection ?? []).join(", "),
-          })}
+          {t("{n} accepted use cases have no active rule and become gaps of the system.", { n: gapCount })}{" "}
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              setMode("usecase");
+              setOnly("norule");
+            }}
+          >
+            {t("Review them")}
+          </button>
         </div>
       )}
       {v.mapping_empty && <div className="note-box">{t("There is no STRIDE mapping yet, so nothing is proposed automatically. You can add use cases by hand.")}</div>}
@@ -1236,20 +1667,76 @@ function StepProposals({
               : t("No threat applies, so nothing is proposed.")}
           </p>
         )}
-        {v.proposals.map((p) => (
-          <ProposalCard key={proposalKey(p)} p={p}>
-            {!readOnly && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() => (p.level === "L3" && p.l3_id ? void removeL3(p.l3_id) : setRemoving(p))}
-              >
-                {t("Remove")}
+        {v.proposals.length > 0 && (
+          <div className="bulk-bar" role="group" aria-label={t("Review the accepted use cases")}>
+            <div className="filter-row" role="group" aria-label={t("Show")}>
+              <button type="button" className={"filter-chip" + (only === "all" ? " active" : "")} aria-pressed={only === "all"} onClick={() => setOnly("all")}>
+                {t("All ({n})", { n: v.proposals.length })}
               </button>
+              <button type="button" className={"filter-chip" + (only === "norule" ? " active" : "")} aria-pressed={only === "norule"} onClick={() => setOnly("norule")}>
+                {t("Without active rule ({n})", { n: gapCount })}
+              </button>
+            </div>
+            {!readOnly && (
+              <div className="row-actions">
+                <span className="small muted" aria-live="polite">
+                  {t("{n} ticked", { n: picked.size })}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setPicked(new Set(shownProposals.map(proposalKey)))}
+                  disabled={!shownProposals.length}
+                >
+                  {t("Tick all shown")}
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => setPicked(new Set())} disabled={!picked.size}>
+                  {t("Clear")}
+                </button>
+                <button type="button" className="btn btn-sm btn-danger" disabled={busy || !picked.size} onClick={() => setBulk(pickedProposals)}>
+                  {t("Remove ticked ({n})", { n: picked.size })}
+                </button>
+              </div>
             )}
-          </ProposalCard>
+          </div>
+        )}
+        {shownProposals.map((p) => (
+          <div key={proposalKey(p)} className="iv-pick-row">
+            {!readOnly && (
+              <input
+                type="checkbox"
+                className="iv-pick"
+                checked={picked.has(proposalKey(p))}
+                aria-label={t("Tick {code}", { code: p.code })}
+                onChange={() =>
+                  setPicked((x) => {
+                    const n = new Set(x);
+                    if (!n.delete(proposalKey(p))) n.add(proposalKey(p));
+                    return n;
+                  })
+                }
+              />
+            )}
+            <ProposalCard p={p}>
+              {!readOnly && noRule(p) && p.sources.length > 0 && (
+                <button type="button" className="btn btn-sm" disabled={busy} onClick={() => requestFrom(p)}>
+                  {t("Create detection request")}
+                </button>
+              )}
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={() => (p.level === "L3" && p.l3_id ? void removeL3(p.l3_id) : setRemoving(p))}
+                >
+                  {t("Remove")}
+                </button>
+              )}
+            </ProposalCard>
+          </div>
         ))}
+        {v.proposals.length > 0 && !shownProposals.length && <p className="muted small">{t("Every accepted use case has an active rule.")}</p>}
       </section>
       )}
 
@@ -1383,48 +1870,69 @@ function StepProposals({
           {t("Detection needs from the interview that no use case covers yet.")}
         </p>
         {v.requests.length > 0 && (
-          <ul className="plain-list">
+          <div className="req-list">
             {v.requests.map((r) => (
-              <li key={r.key || r.text}>
-                {r.text}{" "}
-                <span className="small muted">
-                  · {r.component_name} / {threatLabel(r.category)}
-                </span>{" "}
-                {!readOnly && (
-                  <button
-                    type="button"
-                    className="link-btn small"
-                    disabled={busy}
-                    onClick={() =>
-                      void saveWith((f) => ({ ...f, requests: f.requests.filter((x) => !(x.key === r.key && x.text === r.text)) }))
-                    }
-                  >
-                    {t("Remove")}
-                  </button>
-                )}
-              </li>
+              <RequestCard
+                key={r.key}
+                systemId={iv.system_id}
+                r={r}
+                where={`${r.component_name} / ${threatLabel(r.category)}`}
+                canSetStatus={canSetStatus}
+                onChanged={onStatusChanged}
+                actions={
+                  !readOnly && (
+                    <>
+                      <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setEditingRequest(r)}>
+                        {t("Edit")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          if (
+                            r.status !== "open" &&
+                            !(await confirmDialog(t("Delete the detection request {title}? Its status is {status}.", { title: r.title, status: statusLabel(r.status) }), {
+                              danger: true,
+                              confirmLabel: t("Delete"),
+                            }))
+                          )
+                            return;
+                          void saveWith((f) => ({ ...f, requests: f.requests.filter((x) => x.key !== r.key) }));
+                        }}
+                      >
+                        {t("Remove")}
+                      </button>
+                    </>
+                  )
+                }
+              />
             ))}
-          </ul>
+          </div>
         )}
         {!readOnly && (
           <form
-            className="inline-form"
+            className="req-form"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!request.text.trim() || !request.threat) return;
+              if (!request.title.trim() || !request.threat) return;
               void saveWith((f) => ({
                 ...f,
-                requests: [...f.requests, { key: newKey(), text: request.text.trim(), threat: ref(request.threat) }],
-              })).then((ok) => ok && setRequest({ text: "", threat: "" }));
+                requests: [
+                  ...f.requests,
+                  { key: newKey(), title: request.title.trim(), description: request.description.trim(), threat: ref(request.threat) },
+                ],
+              })).then((ok) => ok && setRequest({ title: "", description: "", threat: "" }));
             }}
           >
             <label className="field grow-2">
-              {t("Detection request")}
+              {t("Title")}
               <input
+                id="req-title"
                 className="input"
-                value={request.text}
-                maxLength={10000}
-                onChange={(e) => setRequest((r) => ({ ...r, text: e.target.value }))}
+                value={request.title}
+                maxLength={200}
+                onChange={(e) => setRequest((r) => ({ ...r, title: e.target.value }))}
               />
             </label>
             <label className="field">
@@ -1438,12 +1946,37 @@ function StepProposals({
                 ))}
               </select>
             </label>
-            <button type="submit" className="btn" disabled={busy || !request.text.trim() || !request.threat}>
+            <label className="field req-wide">
+              {t("Description (what should be detected and why)")}
+              <textarea
+                className="textarea"
+                rows={3}
+                value={request.description}
+                maxLength={10000}
+                onChange={(e) => setRequest((r) => ({ ...r, description: e.target.value }))}
+              />
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={busy || !request.title.trim() || !request.threat}>
               {t("Add")}
             </button>
           </form>
         )}
       </section>
+
+      {editingRequest && (
+        <RequestEditDialog
+          r={editingRequest}
+          threatOptions={threatOptions}
+          toRef={ref}
+          onClose={() => setEditingRequest(null)}
+          onSave={(patch) =>
+            void saveWith((f) => ({
+              ...f,
+              requests: f.requests.map((x) => (x.key === editingRequest.key ? { ...x, ...patch } : x)),
+            })).then(() => setEditingRequest(null))
+          }
+        />
+      )}
 
       {removing && (
         <RemoveDialog
@@ -1455,6 +1988,20 @@ function StepProposals({
               added: f.added.filter((a) => a.l2_id !== removing.l2_id),
               removed: [...f.removed.filter((r) => r.l2_id !== removing.l2_id), { l2_id: removing.l2_id, reason }],
             })).then(() => setRemoving(null))
+          }
+        />
+      )}
+      {bulk && (
+        <RemoveDialog
+          p={{ code: "" }}
+          title={t("Remove {n} use cases?", { n: bulk.length })}
+          hint={t("They leave the accepted list for all their risks. You can restore them under Removed.")}
+          onClose={() => setBulk(null)}
+          onRemove={(reason) =>
+            void removeMany(bulk, reason).then((ok) => {
+              setBulk(null);
+              if (ok) setPicked(new Set());
+            })
           }
         />
       )}
@@ -1798,11 +2345,13 @@ function CompletedView({
   editor,
   onChange,
   onAttachments,
+  onStatusChanged,
 }: {
   iv: IV;
   editor: boolean;
   onChange: (iv: IV) => void;
   onAttachments: (list: InterviewAttachment[]) => void;
+  onStatusChanged: () => void;
 }) {
   const v = iv.view;
   const cmp = useLoad<InterviewCompare | null>(
@@ -1812,6 +2361,8 @@ function CompletedView({
   const [confirming, setConfirming] = useState(false);
   const [unconfirming, setUnconfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const gaps = v.proposals.filter((p) => p.detection === "no_rules").length;
+  const openReqs = v.requests.filter((r) => r.status === "open" || r.status === "in_progress").length;
   const signoff = iv.attachments.find((a) => a.signoff) ?? null;
   const evidence = iv.attachments.filter((a) => !a.signoff);
 
@@ -1873,6 +2424,23 @@ function CompletedView({
         )}
       </section>
 
+      <section className="card stack-sm" aria-labelledby="nexth">
+        <h2 id="nexth" className="h-sm">
+          {t("Next steps")}
+        </h2>
+        <ul className="plain-list next-steps">
+          <li>
+            {gaps > 0 ? t("{n} linked use cases have no active rule and are gaps.", { n: gaps }) : t("No gaps from this interview.")}{" "}
+            <Link to={`/systems/${iv.system_id}#gaph`}>{t("Show gaps")}</Link>
+          </li>
+          <li>
+            {openReqs > 0 ? t("{n} detection requests are open or in progress.", { n: openReqs }) : t("No open detection requests.")}{" "}
+            <Link to={`/usecases/requests?system=${iv.system_id}`}>{t("Show requests")}</Link>
+          </li>
+          {iv.status === "completed" && <li>{t("Send the PDF to the business owner, then record the confirmation above.")}</li>}
+        </ul>
+      </section>
+
       <section className="card stack-sm">
         <h2 className="h-sm">{t("Context")}</h2>
         <dl className="facts">
@@ -1891,41 +2459,49 @@ function CompletedView({
 
       <RiskCoverage risks={v.risks ?? []} components={v.components} />
 
-      <section className="card stack-sm">
-        <h2 className="h-sm">{t("Components and threats")}</h2>
-        <ThreatTable components={v.components} />
-      </section>
+      <details className="fold">
+        <summary>{t("Components and threats")}</summary>
+        <div className="scroll-x">
+          <ThreatTable components={v.components} />
+        </div>
+      </details>
 
-      <section className="card stack-sm">
-        <h2 className="h-sm">{t("Accepted use cases ({n})", { n: v.proposals.length })}</h2>
-        {!v.proposals.length && <p className="muted" style={{ margin: 0 }}>{t("No use cases accepted.")}</p>}
-        {v.proposals.map((p) => (
-          <ProposalCard key={proposalKey(p)} p={p} />
-        ))}
-      </section>
+      <details className="fold">
+        <summary>{t("Accepted use cases ({n})", { n: v.proposals.length })}</summary>
+        <div className="stack-sm">
+          {!v.proposals.length && <p className="muted" style={{ margin: 0 }}>{t("No use cases accepted.")}</p>}
+          {v.proposals.map((p) => (
+            <ProposalCard key={proposalKey(p)} p={p} />
+          ))}
+        </div>
+      </details>
 
       {v.removed.length > 0 && (
-        <section className="card stack-sm">
-          <h2 className="h-sm">{t("Removed ({n})", { n: v.removed.length })}</h2>
-          {v.removed.map((p) => (
-            <ProposalCard key={proposalKey(p)} p={{ ...p, rules: [] }} />
-          ))}
-        </section>
+        <details className="fold">
+          <summary>{t("Removed ({n})", { n: v.removed.length })}</summary>
+          <div className="stack-sm">
+            {v.removed.map((p) => (
+              <ProposalCard key={proposalKey(p)} p={{ ...p, rules: [] }} />
+            ))}
+          </div>
+        </details>
       )}
 
       <section className="card stack-sm">
         <h2 className="h-sm">{t("Detection requests")}</h2>
         {v.requests.length ? (
-          <ul className="plain-list">
+          <div className="req-list">
             {v.requests.map((r) => (
-              <li key={r.key || r.text}>
-                {r.text}{" "}
-                <span className="small muted">
-                  · {r.component_name} / {threatLabel(r.category)}
-                </span>
-              </li>
+              <RequestCard
+                key={r.key}
+                systemId={iv.system_id}
+                r={r}
+                where={`${r.component_name} / ${threatLabel(r.category)}`}
+                canSetStatus={editor}
+                onChanged={onStatusChanged}
+              />
             ))}
-          </ul>
+          </div>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
             {t("No detection requests.")}

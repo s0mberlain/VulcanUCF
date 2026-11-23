@@ -22,12 +22,14 @@ from app import interviews as iv
 from app.api import evidence
 from app.api.deps import DB, SettingsDep
 from app.models import (
+    DetectionRequestState,
     Interview,
     InterviewStatus,
     L2UseCase,
     L3UseCase,
     ReferenceItem,
     RefKind,
+    RequestStatus,
     StrideMapping,
     System,
     SystemLink,
@@ -206,9 +208,30 @@ class RemovedIn(BaseModel):
 
 
 class RequestIn(BaseModel):
-    key: Annotated[str, StringConstraints(max_length=40)] = ""
-    text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=TEXT_MAX)]
+    """A detection request of the interview. `text` is the form before PROJ-1 (a single text)."""
+
+    key: Annotated[str, StringConstraints(max_length=40, pattern=r"^[A-Za-z0-9_-]*$")] = ""
+    title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=iv.TITLE_MAX)] = ""
+    description: Text = ""
+    text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=TEXT_MAX)] = ""
     threat: ThreatRef
+
+    @model_validator(mode="after")
+    def _title(self):
+        if not self.title and self.text:
+            self.title, self.description = iv.split_text(self.text)
+        if not self.title:
+            raise ValueError("A detection request needs a title")
+        return self
+
+
+class RequestStatusIn(BaseModel):
+    """Status of one detection request (PROJ-1). The link names what implemented it."""
+
+    status: RequestStatus
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=iv.NOTE_MAX)] = ""
+    l2_id: int | None = None
+    l3_id: int | None = None
 
 
 class InterviewSave(BaseModel):
@@ -354,6 +377,20 @@ class _Ctx:
         )
         for link in db.scalars(q):
             self.links.setdefault(link.system_id, []).append(link)
+        # request status per system and request key (no row: open)
+        self.states: dict[int, dict[str, DetectionRequestState]] = {}
+        for st in db.scalars(select(DetectionRequestState)):
+            self.states.setdefault(st.system_id, {})[st.key] = st
+
+    def unresolved(self, system_id: int, requests: list[dict]) -> list[dict]:
+        """The requests still to do: open or in progress."""
+        known = self.states.get(system_id, {})
+        return [
+            r
+            for r in requests
+            if (known[r["key"]].status if r["key"] in known else RequestStatus.open)
+            in iv.UNRESOLVED
+        ]
 
 
 def _gaps(system: System, links: list[SystemLink]) -> tuple[list, list, list]:
@@ -403,8 +440,14 @@ def _gaps(system: System, links: list[SystemLink]) -> tuple[list, list, list]:
                 }
             )
     requests = [
-        {"text": r["text"], "component": r["component_name"], "category": r["category"]}
-        for r in result.get("requests", [])
+        {
+            "key": r["key"],
+            "title": r["title"],
+            "description": r["description"],
+            "component": r["component_name"],
+            "category": r["category"],
+        }
+        for r in iv.upgrade_requests(result.get("requests", []))
     ]
     return no_rules, ls_gaps, requests
 
@@ -476,8 +519,13 @@ def _risks(system: System, link_views: list[dict]) -> tuple[list[dict], int | No
         for v in link_views
     ]
     requests = [
-        {"component": r["component"], "category": r["category"], "text": r["text"]}
-        for r in result.get("requests", [])
+        {
+            "key": r["key"],
+            "title": r["title"],
+            "component": r["component"],
+            "category": r["category"],
+        }
+        for r in iv.upgrade_requests(result.get("requests", []))
     ]
     threshold = int(result.get("threshold") or iv.DEFAULT_THRESHOLD)
     view = {
@@ -533,7 +581,10 @@ def _row(system: System, ctx: _Ctx) -> dict:
         "updated_at": system.updated_at,
         "linked": len(links),
         "coverage": round(sum(weights) / len(weights), 4) if weights else None,
-        "gaps": gap_count(no_rules, ls_gaps, requests, _uncovered(risks)),
+        # only the requests still to do count; implemented or declined ones are not gaps
+        "gaps": gap_count(
+            no_rules, ls_gaps, ctx.unresolved(system.id, requests), _uncovered(risks)
+        ),
         "last_interview": last_date,
         "next_due": iv.add_months(last_date, system.review_interval_months) if last_date else None,
         "state": iv.interview_state(system, last_date),
@@ -561,6 +612,7 @@ def _interview_out(db: Session, i: Interview) -> InterviewOut:
         view = iv.evaluate(db, i.data or {}, iv.threshold(db))
     else:
         view = iv.mark_deleted(db, dict(i.result or {}))
+    iv.attach_status(db, i.system_id, view)
     earlier = [x for x in iv.completed(i.system) if x.id != i.id]
     if i.status != InterviewStatus.draft:
         earlier = [x for x in earlier if (x.interview_date, x.id) < (i.interview_date, i.id)]
@@ -684,12 +736,21 @@ def _validate_draft(db: Session, body: InterviewSave) -> dict:
         for r in a.threats:
             if (r.component, r.category) not in applies:
                 raise HTTPException(422, f"{code} is tied to a threat that does not apply")
+    request_keys: set[str] = set()
     for r in body.requests:
-        if not r.text:
-            raise HTTPException(422, "A detection request needs a text")
         if (r.threat.component, r.threat.category) not in applies:
-            raise HTTPException(422, "A detection request is tied to a threat that does not apply")
+            raise HTTPException(
+                422, f"{r.title}: the detection request is tied to a threat that does not apply"
+            )
+        if r.key in request_keys:
+            raise HTTPException(422, f"Detection request key {r.key} is used twice")
+        if r.key:
+            request_keys.add(r.key)
     data = body.model_dump(include={"components", "added", "removed", "requests"}, mode="json")
+    # a request without a key (an older client) gets one; `text` was turned into the title
+    data["requests"] = iv.upgrade_requests(
+        [{k: v for k, v in r.items() if k != "text"} for r in data["requests"]]
+    )
     # an added entry carries either l2_id or l3_id
     data["added"] = [{k: v for k, v in a.items() if v is not None} for a in data["added"]]
     # one removal per use case; a removal from single threats keeps only threats that apply
@@ -757,6 +818,13 @@ def _detail(db: Session, s: System, settings) -> dict:
     no_rules, ls_gaps, requests = _gaps(s, links)
     link_views = _link_views(s, links, ctx)
     risks, threshold = _risks(s, link_views)
+    # the requests of the risk rows carry their status (the chip next to them)
+    known = ctx.states.get(s.id, {})
+    for risk in risks:
+        risk["requests"] = [
+            r | {"status": known[r["key"]].status.value if r["key"] in known else "open"}
+            for r in risk["requests"]
+        ]
     last = iv.latest_completed(s)
     comps = ((last.result or {}) if last else {}).get("components", [])
     return row | {
@@ -779,7 +847,9 @@ def _detail(db: Session, s: System, settings) -> dict:
         ],
         "gap_no_rules": no_rules,
         "gap_log_sources": ls_gaps,
-        "gap_requests": requests,
+        "gap_requests": [
+            r | iv.state_view(db, ctx.states.get(s.id, {}).get(r["key"])) for r in requests
+        ],
         "gap_risks": _uncovered(risks),
         "interviews": [
             InterviewRow.model_validate(i, from_attributes=True)
@@ -1036,6 +1106,127 @@ def interview_pdf(
 
 def _lang(user: User) -> str:
     return user.locale if user.locale in ("en", "de", "nl") else "en"
+
+
+# ---------------------------------------------------------------- detection requests
+
+
+def _request_titles(system: System) -> dict[str, str]:
+    """Key -> title of every detection request in any interview of the system."""
+    titles: dict[str, str] = {}
+    for i in sorted(system.interviews, key=lambda i: (i.interview_date, i.id)):
+        raw = (
+            (i.data or {}).get("requests", [])
+            if i.status == InterviewStatus.draft
+            else (i.result or {}).get("requests", [])
+        )
+        for r in iv.upgrade_requests(raw):
+            titles[r["key"]] = r["title"]
+    return titles
+
+
+@router.put(
+    "/systems/{system_id}/detection-requests/{key}/status",
+    summary="Set the implementation status of a detection request",
+)
+def set_request_status(
+    system_id: int, key: str, body: RequestStatusIn, user: Editor, db: DB
+) -> dict:
+    """Works on draft and completed interviews alike; the last write wins (PROJ-1)."""
+    system = _system(db, system_id)
+    titles = _request_titles(system)
+    if key not in titles:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Detection request not found")
+    if body.status in iv.NOTE_REQUIRED and not body.note:
+        raise HTTPException(422, "Give a reason for a rejected or not feasible request")
+    l2_id = l3_id = None
+    code = None
+    # what implemented the request counts for "implemented" only
+    if body.status == RequestStatus.implemented and (body.l3_id or body.l2_id):
+        if body.l3_id is not None:
+            rule = db.get(L3UseCase, body.l3_id)
+            if rule is None:
+                raise HTTPException(422, "Unknown L3 rule; reload the page")
+            l2_id, l3_id, code = rule.l2_id, rule.id, rule.code
+        else:
+            l2 = db.get(L2UseCase, body.l2_id)
+            if l2 is None:
+                raise HTTPException(422, "Unknown L2 use case; reload the page")
+            l2_id, code = l2.id, l2.code
+
+    def write() -> DetectionRequestState:
+        st = db.scalar(
+            select(DetectionRequestState).where(
+                DetectionRequestState.system_id == system.id, DetectionRequestState.key == key
+            )
+        )
+        if st is None:
+            st = DetectionRequestState(system_id=system.id, key=key)
+            db.add(st)
+        st.status = body.status
+        st.note = body.note
+        st.link_l2_id, st.link_l3_id, st.link_code = l2_id, l3_id, code
+        st.updated_by = user.username
+        st.updated_at = datetime.now(UTC)
+        return st
+
+    def record() -> None:
+        audit.record(
+            db,
+            user,
+            "update",
+            "detection_request",
+            f"{system.name} / {titles[key]}",
+            {"status": body.status.value, "note": body.note, "link": code},
+        )
+
+    st = write()
+    record()
+    try:
+        db.commit()
+    except IntegrityError:  # two first writes at the same moment: the second one updates
+        db.rollback()
+        st = write()
+        record()
+        db.commit()
+    return {"key": key} | iv.state_view(db, st)
+
+
+@router.get("/detection-requests", summary="Detection requests of all systems (PROJ-2)")
+def list_detection_requests(_: Reader, db: DB) -> dict:
+    """The requests of the latest completed interview of every system with one, with their
+    status and the risk score of their threat. Drafts and older interviews do not count, so
+    the numbers agree with the system page. The page filters and sorts."""
+    states = {}
+    for st in db.scalars(select(DetectionRequestState)):
+        states.setdefault(st.system_id, {})[st.key] = st
+    rows = []
+    for system in db.scalars(_system_query()):
+        last = iv.latest_completed(system)
+        if last is None:
+            continue
+        result = last.result or {}
+        score = {
+            (c["key"], t["category"]): t.get("score")
+            for c in result.get("components", [])
+            for t in c.get("threats", [])
+        }
+        for r in iv.upgrade_requests(result.get("requests", [])):
+            rows.append(
+                {
+                    "key": r["key"],
+                    "title": r["title"],
+                    "description": r["description"],
+                    "system_id": system.id,
+                    "system_name": system.name,
+                    "archived": system.archived,
+                    "component": r["component_name"],
+                    "category": r["category"],
+                    "risk_score": score.get((r["component"], r["category"])),
+                }
+                | iv.state_view(db, states.get(system.id, {}).get(r["key"]))
+            )
+    return {"requests": rows}
 
 
 # ---------------------------------------------------------------- STRIDE mapping

@@ -88,7 +88,7 @@ class Report(FPDF):
         self.set_margins(16, 16, 16)
         self.set_auto_page_break(True, margin=16)
         self.set_title(title)
-        self.set_creator("Vulcan")
+        self.set_creator("Vulcan UCF")
         self.add_font(FONT, "", str(FONT_DIR / "DejaVuSans.ttf"))
         self.add_font(FONT, "B", str(FONT_DIR / "DejaVuSans-Bold.ttf"))
 
