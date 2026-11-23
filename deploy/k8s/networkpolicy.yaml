@@ -1,0 +1,66 @@
+# Nothing may connect to pods in this namespace unless allowed below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: vulcan
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# The app: only from the ingress controller.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vulcan-from-ingress
+  namespace: vulcan
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vulcan
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # Namespace of your ingress controller: kube-system on RKE2 / k3s,
+              # ingress-nginx for a separately installed ingress-nginx.
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { port: 8080, protocol: TCP }
+---
+# PostgreSQL: from the app, the backup job, the other instance and the CloudNativePG operator.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vulcan-db
+  namespace: vulcan
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: vulcan-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vulcan
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vulcan-backup
+      ports:
+        - { port: 5432, protocol: TCP }
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: vulcan-db
+      ports:
+        - { port: 5432, protocol: TCP }
+        - { port: 8000, protocol: TCP }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - { port: 8000, protocol: TCP }
+        - { port: 5432, protocol: TCP }

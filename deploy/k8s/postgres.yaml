@@ -1,0 +1,34 @@
+# PostgreSQL managed by the CloudNativePG operator (https://cloudnative-pg.io).
+# The operator creates the Secret "vulcan-db-app" with the generated password and a ready
+# connection string (key "uri"), which the app reads as DATABASE_URL. No password is kept here.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: vulcan-db
+  namespace: vulcan
+spec:
+  # Primary + one hot standby on another node; the operator fails over automatically.
+  instances: 2
+  # The app's CI tests PostgreSQL 16.
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  primaryUpdateStrategy: unsupervised
+  bootstrap:
+    initdb:
+      database: magma
+      owner: magma
+  storage:
+    size: 10Gi
+    # storageClass: longhorn     # leave out to use the cluster's default StorageClass
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  affinity:
+    # Keep primary and standby on different nodes.
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+  # Off-site backups (S3, MinIO, Azure, GCS) with point-in-time recovery: install the Barman
+  # Cloud plugin and add it here, see https://cloudnative-pg.io/plugin-barman-cloud/.
+  # Until then backup-cronjob.yaml writes daily pg_dump files to a volume in the cluster.

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vulcan-config
+  namespace: vulcan
+data:
+  # Public address of the app. Must be https:// so cookies are Secure and HSTS is sent; it is
+  # also used for the cross-site write check and the SSO redirect URI.
+  BASE_URL: "https://vulcan.example.com"
+  # Proxies whose X-Forwarded-For / -Proto are trusted: the pod network the ingress controller
+  # runs in (RKE2 / k3s default cluster CIDR). Safe because networkpolicy.yaml only lets the
+  # ingress controller reach the app. Never "*".
+  FORWARDED_ALLOW_IPS: "10.42.0.0/16"
+  # First start of a new CloudNativePG cluster can take a few minutes.
+  DB_WAIT_SECONDS: "300"
+  SNAPSHOT_SCHEDULE: "monthly"
+  # Optional, see README: OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_ROLE_MAP, GIT_REMOTE_URL, ...

@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vulcan
+  namespace: vulcan
+  annotations:
+    # ingress-nginx (RKE2 default) limits bodies to 1 MB; the app accepts up to 25 MB uploads.
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # With cert-manager installed, uncomment to get a certificate automatically:
+    # cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [vulcan.example.com]
+      secretName: vulcan-tls
+  rules:
+    - host: vulcan.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vulcan
+                port:
+                  name: http

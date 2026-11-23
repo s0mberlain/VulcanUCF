@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulcan
+  namespace: vulcan
+  labels:
+    app.kubernetes.io/name: vulcan
+spec:
+  # Several replicas are supported on PostgreSQL (migrations, snapshots and git sync are
+  # coordinated through the database). Note: the per-IP login limit is kept per pod.
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vulcan
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vulcan
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999          # user "magma" in the image
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vulcan
+          image: ghcr.io/secopshound/vulcan:1.1.1-25-g8bf8d15
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: vulcan-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vulcan-db-app     # created by CloudNativePG
+                  key: uri
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vulcan-app
+                  key: SECRET_KEY
+            - name: ADMIN_PASSWORD      # only used to create the first admin on an empty DB
+              valueFrom:
+                secretKeyRef:
+                  name: vulcan-app
+                  key: ADMIN_PASSWORD
+                  optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          startupProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 5
+            failureThreshold: 72        # up to 6 minutes for migrations / waiting for the DB
+          readinessProbe:
+            httpGet: { path: /api/ready, port: http }   # 503 while the database is down
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: data, mountPath: /data }   # git sync working copy only; data is in PostgreSQL
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 512Mi }
+        - name: data
+          emptyDir: { sizeLimit: 1Gi }

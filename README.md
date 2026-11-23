@@ -74,6 +74,13 @@ Ids are kept and the sequences are moved past them. An empty or
 mistyped source is refused, so `--replace` cannot wipe the target by accident. Other commands: `magma migrate` and
 `magma demo-data --seed 42`.
 
+## Kubernetes
+
+[`deploy/k8s/`](deploy/k8s/README.md) has Kustomize manifests: the app (non-root, read-only root
+filesystem), PostgreSQL through the CloudNativePG operator (primary + standby), Ingress with TLS,
+NetworkPolicies and a daily `pg_dump` backup job. Secrets are created with `kubectl`, not stored
+in the folder. Apply with `kubectl apply -k deploy/k8s`.
+
 ## Develop
 
 Backend (Python 3.12+, FastAPI):
