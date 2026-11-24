@@ -1,4 +1,5 @@
 import subprocess
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,7 +28,14 @@ def git_admin(settings, remote, tmp_path):
     settings.git_workdir = tmp_path / "work"
     settings.git_auto_sync = False  # sync explicitly so the test is deterministic
     with TestClient(create_app(settings)) as c:
+        _wait_for_sync()  # the sync at start-up must not pick up the test's first commits
         yield login(c, "admin", ADMIN_PW)
+
+
+def _wait_for_sync(timeout: float = 30) -> None:
+    for thread in threading.enumerate():
+        if thread.name == "gitsync":
+            thread.join(timeout)
 
 
 def test_disabled_by_default(admin):
@@ -124,6 +132,7 @@ def pull_admin(settings, remote, tmp_path):
     settings.git_pull_interval_minutes = 0
     settings.git_webhook_secret = "hook-secret"
     with TestClient(create_app(settings)) as c:
+        _wait_for_sync()  # the sync at start-up must not pick up the test's first commits
         yield login(c, "admin", ADMIN_PW)
 
 
