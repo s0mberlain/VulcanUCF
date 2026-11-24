@@ -10,8 +10,14 @@ missing.
 
 One Docker container, SQLite or PostgreSQL, English, German and Dutch interface.
 
+**New to the app?** The [user guide](docs/user-guide.md) explains the concepts and the main
+workflows step by step: use cases and rules, status changes, priorities, threat modelling
+interviews, purple team tests, output metrics and reports. This README covers installation,
+configuration and operations.
+
 ## Contents
 
+- [User guide](docs/user-guide.md)
 - [Features at a glance](#features-at-a-glance)
 - [Screenshots](#screenshots)
 - [Quick start with Docker](#quick-start-with-docker)
@@ -582,7 +588,7 @@ The frontend uses a JSON API under `/api`, which can also be used directly:
 backend/      FastAPI app (API under /api, serves the built SPA), migrations, tests
 frontend/     React single-page app, locales in src/locales/
 deploy/       Keycloak realm and Gitea init for local testing, SIEM push client and searches
-docs/         original plan with milestones M0 to M7 (historical), screenshots
+docs/         user guide, screenshots, original plan with milestones M0 to M7 (historical)
 features/     feature specifications (PROJ-1 to PROJ-4)
 Dockerfile    multi-stage build: frontend → Python runtime, one container on port 8080
 ```
