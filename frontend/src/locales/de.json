@@ -1613,5 +1613,22 @@
   "{n} rows repeat an incident ID and were counted once.": "{n} Zeilen wiederholen eine Incident-ID und wurden einmal gezählt.",
   "Apply to {n} months": "Auf {n} Monate anwenden",
   "Search or add…": "Suchen oder hinzufügen …",
-  "Add “{name}”": "„{name}“ hinzufügen"
+  "Add “{name}”": "„{name}“ hinzufügen",
+  "Bulk edit": "Mehrfachbearbeitung",
+  "{n} selected": "{n} ausgewählt",
+  "Edit fields": "Felder bearbeiten",
+  "Clear selection": "Auswahl aufheben",
+  "{n} use cases changed.": "{n} Use Cases geändert.",
+  "{n} skipped:": "{n} übersprungen:",
+  "Edit {n} use cases": "{n} Use Cases bearbeiten",
+  "Change status of {n} use cases": "Status von {n} Use Cases ändern",
+  "Verify {n} use cases": "{n} Use Cases verifizieren",
+  "Only what you change here is applied. Lists keep their other entries.": "Nur was Sie hier ändern, wird übernommen. Listen behalten ihre übrigen Einträge.",
+  "Keep as is": "Unverändert lassen",
+  "Set to": "Setzen auf",
+  "Apply": "Anwenden",
+  "Use cases where this step is not allowed, or whose definition of done is incomplete, are skipped and listed afterwards. Skipping the definition of done is only possible one use case at a time.": "Use Cases, bei denen dieser Schritt nicht erlaubt ist oder deren Definition of Done unvollständig ist, werden übersprungen und danach aufgelistet. Die Definition of Done lässt sich nur einzeln überspringen.",
+  "Select": "Auswählen",
+  "Select all in {code}": "Alle in {code} auswählen",
+  "Select {code}": "{code} auswählen"
 }

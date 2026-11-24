@@ -1613,5 +1613,22 @@
   "{n} rows repeat an incident ID and were counted once.": "{n} regels herhalen een incident-ID en zijn één keer geteld.",
   "Apply to {n} months": "Toepassen op {n} maanden",
   "Search or add…": "Zoeken of toevoegen …",
-  "Add “{name}”": "“{name}” toevoegen"
+  "Add “{name}”": "“{name}” toevoegen",
+  "Bulk edit": "Meerdere bewerken",
+  "{n} selected": "{n} geselecteerd",
+  "Edit fields": "Velden bewerken",
+  "Clear selection": "Selectie wissen",
+  "{n} use cases changed.": "{n} use cases gewijzigd.",
+  "{n} skipped:": "{n} overgeslagen:",
+  "Edit {n} use cases": "{n} use cases bewerken",
+  "Change status of {n} use cases": "Status van {n} use cases wijzigen",
+  "Verify {n} use cases": "{n} use cases verifiëren",
+  "Only what you change here is applied. Lists keep their other entries.": "Alleen wat u hier wijzigt wordt toegepast. Lijsten behouden hun overige items.",
+  "Keep as is": "Ongewijzigd laten",
+  "Set to": "Instellen op",
+  "Apply": "Toepassen",
+  "Use cases where this step is not allowed, or whose definition of done is incomplete, are skipped and listed afterwards. Skipping the definition of done is only possible one use case at a time.": "Use cases waarvoor deze stap niet is toegestaan of waarvan de definition of done onvolledig is, worden overgeslagen en daarna vermeld. De definition of done overslaan kan alleen per use case.",
+  "Select": "Selecteren",
+  "Select all in {code}": "Alles in {code} selecteren",
+  "Select {code}": "{code} selecteren"
 }

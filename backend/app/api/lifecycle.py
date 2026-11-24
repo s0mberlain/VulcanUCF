@@ -146,6 +146,57 @@ def change_log(
     return [event_out(db, e) for e in db.scalars(q.limit(limit))]
 
 
+def apply_change(db: Session, level: str, obj, body: ChangeIn, user) -> None:
+    """Change the lifecycle status of one use case or rule (no commit). Raises HTTPException when
+    the change is not allowed; also used by the bulk edit (issue #73)."""
+    code = obj.code
+    if body.to_status == obj.lifecycle_status:
+        raise HTTPException(422, f"{code} is already {body.to_status.value}")
+    if body.driver_type not in lifecycle.DRIVER_TYPES or not lifecycle.valid_driver(
+        body.driver_type, body.driver
+    ):
+        raise HTTPException(422, "Unknown change driver")
+    problem = lifecycle.transition_error(obj.lifecycle_status, body.to_status)
+    if problem:
+        raise HTTPException(422, problem)
+    missing = lifecycle.dod_missing(obj) if body.to_status == Lifecycle.operational else []
+    if missing and not body.override:
+        raise HTTPException(
+            422,
+            "Definition of done is not complete: "
+            + ", ".join(lbl for k, lbl, _ in lifecycle.DOD_ITEMS if k in missing),
+        )
+    if missing and user.role != Role.admin:
+        raise HTTPException(403, "Only admins can skip the definition of done")
+    old = obj.lifecycle_status
+    lifecycle.apply_status(obj, body.to_status)
+    if body.to_status == Lifecycle.operational and obj.onboarded_at is None:
+        obj.onboarded_at = date.today()
+    lifecycle.record_change(
+        db,
+        obj,
+        old,
+        body.to_status,
+        user.username,
+        body.driver_type,
+        body.driver,
+        body.note,
+        override=bool(missing),
+    )
+    audit.record(
+        db,
+        user,
+        "lifecycle",
+        level,
+        code,
+        {
+            "lifecycle_status": [old, body.to_status],
+            "driver": f"{body.driver_type}/{body.driver}".rstrip("/"),
+        }
+        | ({"dod_override": missing} if missing else {}),
+    )
+
+
 for _level in ("l2", "l3"):
 
     def _make(level: str) -> None:
@@ -158,51 +209,7 @@ for _level in ("l2", "l3"):
         @router.post(f"{base}/lifecycle", response_model=LifecycleOut, status_code=201)
         def change_status(code: str, body: ChangeIn, user: Editor, db: DB) -> LifecycleOut:
             obj = _owner(db, level, code)
-            if body.to_status == obj.lifecycle_status:
-                raise HTTPException(422, f"{code} is already {body.to_status.value}")
-            if body.driver_type not in lifecycle.DRIVER_TYPES or not lifecycle.valid_driver(
-                body.driver_type, body.driver
-            ):
-                raise HTTPException(422, "Unknown change driver")
-            problem = lifecycle.transition_error(obj.lifecycle_status, body.to_status)
-            if problem:
-                raise HTTPException(422, problem)
-            missing = lifecycle.dod_missing(obj) if body.to_status == Lifecycle.operational else []
-            if missing and not body.override:
-                raise HTTPException(
-                    422,
-                    "Definition of done is not complete: "
-                    + ", ".join(lbl for k, lbl, _ in lifecycle.DOD_ITEMS if k in missing),
-                )
-            if missing and user.role != Role.admin:
-                raise HTTPException(403, "Only admins can skip the definition of done")
-            old = obj.lifecycle_status
-            lifecycle.apply_status(obj, body.to_status)
-            if body.to_status == Lifecycle.operational and obj.onboarded_at is None:
-                obj.onboarded_at = date.today()
-            lifecycle.record_change(
-                db,
-                obj,
-                old,
-                body.to_status,
-                user.username,
-                body.driver_type,
-                body.driver,
-                body.note,
-                override=bool(missing),
-            )
-            audit.record(
-                db,
-                user,
-                "lifecycle",
-                level,
-                code,
-                {
-                    "lifecycle_status": [old, body.to_status],
-                    "driver": f"{body.driver_type}/{body.driver}".rstrip("/"),
-                }
-                | ({"dod_override": missing} if missing else {}),
-            )
+            apply_change(db, level, obj, body, user)
             db.commit()
             return _state(db, level, obj)
 

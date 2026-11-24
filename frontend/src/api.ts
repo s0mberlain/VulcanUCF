@@ -413,6 +413,22 @@ export interface LifecycleState {
   allowed: Lifecycle[];
   events: LifecycleEvent[];
 }
+export interface BulkResult {
+  changed: number;
+  results: { code: string; ok: boolean; error: string | null }[];
+}
+export interface ListChange<T = string> {
+  add: T[];
+  remove: T[];
+}
+export interface BulkL2Update {
+  codes: string[];
+  risk_level?: number | null;
+  target_implementation?: number | null;
+  actors?: ListChange;
+  business_drivers?: ListChange;
+  compliance_driver_ids?: ListChange<number>;
+}
 export interface LifecycleChange {
   to_status: Lifecycle;
   driver_type: string;
@@ -1201,6 +1217,12 @@ export const api = {
   l2: (code: string) => request<L2>("GET", `/api/l2/${enc(code)}`),
   createL2: (body: L2Input & { code: string; name: string }) => request<L2>("POST", "/api/l2", body),
   updateL2: (code: string, body: L2Input) => request<L2>("PATCH", `/api/l2/${enc(code)}`, body),
+  /** Bulk edit of L2 use cases (#73): each code is changed on its own, failures are listed. */
+  bulkUpdateL2: (body: BulkL2Update) => request<BulkResult>("POST", "/api/l2-bulk/update", body),
+  bulkLifecycleL2: (body: LifecycleChange & { codes: string[] }) =>
+    request<BulkResult>("POST", "/api/l2-bulk/lifecycle", body),
+  bulkVerifyL2: (body: { codes: string[]; result: "ok" | "issues"; note: string; verified_at?: string }) =>
+    request<BulkResult>("POST", "/api/l2-bulk/verify", body),
   /** Refused with 409 and `systems` while systems link the L2 and confirm is false (#48). */
   deleteL2: (code: string, confirm = false) =>
     request<void>("DELETE", `/api/l2/${enc(code)}${confirm ? "?confirm=true" : ""}`),

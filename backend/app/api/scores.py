@@ -183,43 +183,46 @@ def _history(db: Session, level: str, obj) -> list[Verification]:
     return list(db.scalars(q.order_by(Verification.verified_at.desc(), Verification.id.desc())))
 
 
+def record_verification(db: Session, level: str, obj, body: VerifyIn, user) -> Verification:
+    """Add one verification to a use case or rule (no commit); also used by the bulk edit."""
+    when = body.verified_at or date.today()
+    try:
+        not_in_future(when)
+    except ValueError:
+        raise HTTPException(422, "Verification date cannot be in the future") from None
+    v = Verification(verified_at=when, username=user.username, result=body.result, note=body.note)
+    setattr(v, f"{level}_id", obj.id)
+    db.add(v)
+    # Only a check without issues counts as verified: a failed check must not clear the
+    # overdue flag, raise verification health or tag the config as verified.
+    tag = None
+    if body.result == VerificationResult.ok:
+        if obj.last_verified_at is None or when >= obj.last_verified_at:
+            obj.last_verified_at = when
+            obj.last_verified_by = user.username
+        # Tag the configuration version that was verified (PLAN 4a); only rules have one
+        if level == "l3":
+            tag = configs.tag_verified(db, obj, when, user.username)
+    audit.record(
+        db,
+        user,
+        "verify",
+        level,
+        obj.code,
+        {"result": body.result.value, "verified_at": when, "note": body.note}
+        | ({"config_tag": tag} if tag else {}),
+    )
+    v.config_tag = tag
+    return v
+
+
 for _level in ("l2", "l3"):
 
     def _make(level: str) -> None:
         @router.post(f"/{level}/{{code}}/verify", response_model=VerificationOut, status_code=201)
         def verify(code: str, body: VerifyIn, user: Editor, db: DB) -> Verification:
-            obj = _target(db, level, code)
-            when = body.verified_at or date.today()
-            try:
-                not_in_future(when)
-            except ValueError:
-                raise HTTPException(422, "Verification date cannot be in the future") from None
-            v = Verification(
-                verified_at=when, username=user.username, result=body.result, note=body.note
-            )
-            setattr(v, f"{level}_id", obj.id)
-            db.add(v)
-            # Only a check without issues counts as verified: a failed check must not clear the
-            # overdue flag, raise verification health or tag the config as verified.
-            tag = None
-            if body.result == VerificationResult.ok:
-                if obj.last_verified_at is None or when >= obj.last_verified_at:
-                    obj.last_verified_at = when
-                    obj.last_verified_by = user.username
-                # Tag the configuration version that was verified (PLAN 4a); only rules have one
-                if level == "l3":
-                    tag = configs.tag_verified(db, obj, when, user.username)
-            audit.record(
-                db,
-                user,
-                "verify",
-                level,
-                code,
-                {"result": body.result.value, "verified_at": when, "note": body.note}
-                | ({"config_tag": tag} if tag else {}),
-            )
+            v = record_verification(db, level, _target(db, level, code), body, user)
             db.commit()
-            v.config_tag = tag
             return v
 
         @router.get(f"/{level}/{{code}}/verifications", response_model=list[VerificationOut])
