@@ -1,8 +1,8 @@
 # Vulcan UCF
 
-Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
+Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned JSON configs per rule.
 
-Status: **M7**: MVP (catalogue, scoring, verification, JSON configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
+Features: catalogue, scoring and verification, JSON configs with history, Excel import/export, local login, SSO and two-factor login, lifecycle change log, history and trends, optional two-way git sync, risk-based priorities, business and compliance drivers, ATT&CK coverage, output metrics, a SIEM push API, threat modelling with business owner interviews and detection requests, and purple team tests (campaigns, quick tests, test library, multi-round tests and detection gaps). PostgreSQL or SQLite; English, German and Dutch UI. [docs/PLAN.md](docs/PLAN.md) is the original plan with milestones M0 to M7 (historical); later features are specified in [features/](features/INDEX.md).
 
 ## Run with Docker
 
@@ -247,7 +247,24 @@ There is no live SIEM connector; instead the SIEM side pushes data to the app (s
 A SIEM rule is linked through the field *SIEM rule IDs* on the rule page, or by using the L3 code
 as the SIEM rule id.
 
-## Excel import / export
+## Threat modelling and detection requests
+
+Systems are described with their business owner in STRIDE interviews (components, log sources,
+threats with likelihood and impact). A completed interview links the system to the L2 use cases
+and rules that cover its threats, raises the risk level of those rules (Priorities) and turns
+what is missing into detection requests. Requests have a status (open, in progress, implemented,
+rejected, not feasible) and are listed for all systems under Use cases → Detection requests.
+Evidence files and the owner's sign-off can be attached to an interview.
+
+## Purple team tests
+
+Rules are verified by tests of an ATT&CK technique, per rule and scope. Tests run in campaigns
+(planned, running, closed) or as quick tests, can start from the test library and are repeated in
+rounds: the red team records the execution, the blue team the result (Blocked, Alerted, Logged,
+Not detected). A successful result verifies the covered scopes for the rule's verification
+interval; Logged and Not detected become detection gaps until they are fixed or accepted with a
+reason.
+
 
 *Import / Export* writes the classic MaGMa UCF Tool layout (L1 UC, L2 UC, L3 UC, Drivers,
 References) with its formulas, plus extra columns for app fields. Import reads the same layout,
@@ -323,8 +340,8 @@ ATT&CK catalogue) stays as entered; the Excel export keeps the classic English s
 
 Texts live in `frontend/src/locales/{de,nl}.json`, keyed by the English text used in
 `t("...")`. `npm run i18n:check` (also in CI) fails when a text has no German or Dutch entry or a
-`{placeholder}` got lost. Labels sent by the API (definition of done, change drivers, CMMI levels,
-trend metrics) are listed in `frontend/src/serverTexts.ts` so they are translated too.
+`{placeholder}` got lost. Labels sent by the API (definition of done, change drivers, trend
+metrics) are listed in `frontend/src/serverTexts.ts` so they are translated too.
 
 ## Roles
 
@@ -333,12 +350,14 @@ trend metrics) are listed in `frontend/src/serverTexts.ts` so they are translate
 | admin | everything, incl. users and deletes |
 | analyst | read and edit use cases, drivers, reference lists |
 | auditor | read everything incl. the audit log, no changes |
+| red_team | local accounts with an end date: only the purple team campaigns they are assigned to; they record the execution of tests and see the blue team's results once the campaign is closed (or at once when the campaign is open for collaboration) |
 
 ## Layout
 
 ```
 backend/    FastAPI app (API under /api, serves the built SPA)
 frontend/   React single-page app
-docs/       plan and design draft
+docs/       original plan (historical)
+features/   feature specifications (PROJ-1 to PROJ-4)
 Dockerfile  multi-stage build: frontend → Python runtime, one container on port 8080
 ```
