@@ -127,7 +127,7 @@ def test_ak45_changing_the_result_recomputes(analyst, scopes):  # AK-45
     t = quick(analyst)
     assert rule_state(analyst)["state"] == "verified"
     r = analyst.put(
-        f"/api/tests/{t['id']}/blue",
+        f"/api/tests/{t['id']}/rounds/1/blue",
         json={
             "outcome": "logged",
             "blue_notes": "only logged",
@@ -333,7 +333,8 @@ def test_ak11_15_status_flow(analyst, scopes):  # AK-11..15
     # results only while running
     assert (
         analyst.put(
-            f"/api/tests/{t['id']}/red", json={"exec_status": "executed", "executed_at": iso(1)}
+            f"/api/tests/{t['id']}/rounds/1/red",
+            json={"exec_status": "executed", "started_at": iso(1)},
         ).status_code
         == 409
     )
@@ -346,7 +347,8 @@ def test_ak11_15_status_flow(analyst, scopes):  # AK-11..15
     assert r.status_code == 409 and "t" in r.text
     assert (
         analyst.put(
-            f"/api/tests/{t['id']}/red", json={"exec_status": "executed", "executed_at": iso(1)}
+            f"/api/tests/{t['id']}/rounds/1/red",
+            json={"exec_status": "executed", "started_at": iso(1)},
         ).status_code
         == 200
     )
@@ -356,7 +358,8 @@ def test_ak11_15_status_flow(analyst, scopes):  # AK-11..15
     )  # no result yet
     assert (
         analyst.put(
-            f"/api/tests/{t['id']}/blue", json={"outcome": "alerted", "detected_at": iso(1, 11)}
+            f"/api/tests/{t['id']}/rounds/1/blue",
+            json={"outcome": "alerted", "detected_at": iso(1, 11)},
         ).status_code
         == 200
     )
@@ -365,7 +368,10 @@ def test_ak11_15_status_flow(analyst, scopes):  # AK-11..15
         == 200
     )
     # closed: read-only
-    assert analyst.put(f"/api/tests/{t['id']}/blue", json={"outcome": "logged"}).status_code == 409
+    assert (
+        analyst.put(f"/api/tests/{t['id']}/rounds/1/blue", json={"outcome": "logged"}).status_code
+        == 409
+    )
     assert (
         analyst.post(f"/api/campaigns/{c['id']}/status", json={"status": "running"}).status_code
         == 200
@@ -457,16 +463,21 @@ def test_ak26_29_red_team_creates_tests_but_cannot_link(admin, analyst, app, sco
     )
     assert (
         rt.put(
-            f"/api/tests/{a['id']}/red", json={"exec_status": "executed", "executed_at": iso(0, 9)}
+            f"/api/tests/{a['id']}/rounds/1/red",
+            json={"exec_status": "executed", "started_at": iso(0, 9)},
         ).status_code
         == 200
     )
-    assert rt.put(f"/api/tests/{a['id']}/blue", json={"outcome": "alerted"}).status_code == 403
+    assert (
+        rt.put(f"/api/tests/{a['id']}/rounds/1/blue", json={"outcome": "alerted"}).status_code
+        == 403
+    )
     # once the blue team has a result, the red team cannot change its own test
     analyst.put(
-        f"/api/tests/{t['id']}/red", json={"exec_status": "executed", "executed_at": iso(0, 8)}
+        f"/api/tests/{t['id']}/rounds/1/red",
+        json={"exec_status": "executed", "started_at": iso(0, 8)},
     )
-    analyst.put(f"/api/tests/{t['id']}/blue", json={"outcome": "not_detected"})
+    analyst.put(f"/api/tests/{t['id']}/rounds/1/blue", json={"outcome": "not_detected"})
     assert (
         rt.put(f"/api/tests/{t['id']}", json={"title": "late", "technique": "T1003"}).status_code
         == 403
@@ -486,10 +497,11 @@ def test_ak35_36_blue_result_hidden_until_closed(admin, analyst, app, scopes):  
         },
     ).json()
     analyst.put(
-        f"/api/tests/{t['id']}/red", json={"exec_status": "executed", "executed_at": iso(0, 9)}
+        f"/api/tests/{t['id']}/rounds/1/red",
+        json={"exec_status": "executed", "started_at": iso(0, 9)},
     )
     analyst.put(
-        f"/api/tests/{t['id']}/blue",
+        f"/api/tests/{t['id']}/rounds/1/blue",
         json={"outcome": "alerted", "detected_at": iso(0, 10), "blue_notes": "secret"},
     )
     seen = rt.get(f"/api/tests/{t['id']}").json()
@@ -535,19 +547,19 @@ def test_ak75_conflict_on_the_same_part(analyst):  # AK-75, AK-76
         analyst, exec_status="not_run", executed_at=None, outcome=None, detected_at=None, links=[]
     )
     ok = analyst.put(
-        f"/api/tests/{t['id']}/blue",
+        f"/api/tests/{t['id']}/rounds/1/blue",
         json={"outcome": None, "blue_notes": "a", "expected_version": t["blue_version"]},
     )
     assert ok.status_code == 200
     stale = analyst.put(
-        f"/api/tests/{t['id']}/blue",
+        f"/api/tests/{t['id']}/rounds/1/blue",
         json={"outcome": None, "blue_notes": "b", "expected_version": t["blue_version"]},
     )
     assert stale.status_code == 409 and "reload" in stale.text
     # the red part has its own version
     assert (
         analyst.put(
-            f"/api/tests/{t['id']}/red",
+            f"/api/tests/{t['id']}/rounds/1/red",
             json={"exec_status": "not_run", "expected_version": t["red_version"]},
         ).status_code
         == 200

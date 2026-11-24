@@ -113,9 +113,9 @@ def reset_password(settings, args) -> int:
     from sqlalchemy import delete, select
 
     from app import audit
-    from app.api.auth import clear_totp
     from app.models import AuthSource, User, UserSession
     from app.security import hash_password
+    from app.totp import clear_totp
 
     username = args.username or settings.admin_user
     try:

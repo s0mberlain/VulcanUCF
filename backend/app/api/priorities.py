@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app import drivers, growth
+from app import drivers, priorities
 from app.api.deps import DB, SettingsDep
 from app.interviews import system_risks
 from app.models import L3UseCase, Lifecycle
@@ -14,7 +14,7 @@ from app.schemas import DriverCoverage
 from app.scoring import RuleInput, score_rule
 from app.security import Reader
 
-router = APIRouter(tags=["growth"])
+router = APIRouter(tags=["priorities"])
 
 ACTIVE = (Lifecycle.onboarding, Lifecycle.operational, Lifecycle.maintenance)
 
@@ -98,7 +98,7 @@ def gaps(
         potential = s.potential
         if potential is None and None not in (r.effectiveness, r.implementation, r.coverage):
             potential = r.effectiveness - r.effectiveness * r.implementation * r.coverage
-        e = growth.effective(r, targets, potential, sys_risk.for_rule(r))
+        e = priorities.effective(r, targets, potential, sys_risk.for_rule(r))
         row = GapRow(
             code=r.code,
             name=r.name,

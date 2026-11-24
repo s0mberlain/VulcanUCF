@@ -23,6 +23,17 @@ DOCS_CSP = (
 )
 
 
+def _cache_control(path: str) -> bytes | None:
+    """Built files carry a content hash in their name, so browsers may keep them for good; the
+    page itself is checked on every visit so a new release is picked up at once. API answers
+    set their own headers."""
+    if path.startswith("/assets/"):
+        return b"public, max-age=31536000, immutable"
+    if path == "/api" or path.startswith("/api/"):
+        return None
+    return b"no-cache"
+
+
 class BodyTooLarge(Exception):
     pass
 
@@ -142,7 +153,9 @@ class SecurityHeaders:
                 return message
 
         token = audit.client_ip.set(client[0] if client else None)
-        csp = DOCS_CSP if scope.get("path") == "/api/docs" else CSP
+        path = scope.get("path") or ""
+        csp = DOCS_CSP if path == "/api/docs" else CSP
+        cache = _cache_control(path)
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
@@ -158,6 +171,8 @@ class SecurityHeaders:
                 ]
                 if self.hsts:
                     extra.append((b"strict-transport-security", b"max-age=31536000"))
+                if cache:
+                    extra.append((b"cache-control", cache))
                 headers += [(k, v) for k, v in extra if k not in present]
                 message["headers"] = headers
             await send(message)

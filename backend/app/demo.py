@@ -18,6 +18,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app import configs, lifecycle, snapshots
+from app.dates import months_back
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -232,7 +233,6 @@ def _demo_lifecycle(db: Session, rnd: random.Random, l2s, rules, users, today: d
 def _demo_output(db: Session, rnd: random.Random, rules, today: date) -> int:
     """Monthly alert counts for live rules. Less effective rules raise more false positives;
     a few noisy rules stand out so the summary has something to show."""
-    from app.api.output import months_back
     from app.scoring import SCORED_STATES
 
     n = 0

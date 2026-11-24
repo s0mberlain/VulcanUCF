@@ -7,45 +7,22 @@ stay as they are, so a typo is visible in the result.
 """
 
 from datetime import datetime
-from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, StringConstraints
 
 from app import audit
 from app.api.deps import DB
 from app.models import AppSetting
+from app.rulename import BUILTINS, RULE_NAME, RuleNameSettings, load
 from app.security import Admin, Reader
 
 router = APIRouter(tags=["settings"])
-
-RULE_NAME = "rule_name"
-BUILTINS = ("ucID", "ucName", "l2ID", "l1ID")
-DEFAULT_FORMAT = "$ucID:$ucName"
-VAR_NAME = r"^[A-Za-z_][A-Za-z0-9_]{0,49}$"
-
-
-class Variable(BaseModel):
-    name: Annotated[str, StringConstraints(strip_whitespace=True, pattern=VAR_NAME)]
-    value: Annotated[str, StringConstraints(max_length=200)] = ""
-
-
-class RuleNameSettings(BaseModel):
-    format: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] = (
-        DEFAULT_FORMAT
-    )
-    variables: list[Variable] = Field(default_factory=list, max_length=50)
 
 
 class RuleNameOut(RuleNameSettings):
     builtins: list[str] = list(BUILTINS)
     updated_at: datetime | None = None
     updated_by: str | None = None
-
-
-def load(db) -> tuple[RuleNameSettings, AppSetting | None]:
-    row = db.get(AppSetting, RULE_NAME)
-    return (RuleNameSettings.model_validate(row.value) if row else RuleNameSettings()), row
 
 
 @router.get("/settings/rule-name", response_model=RuleNameOut)

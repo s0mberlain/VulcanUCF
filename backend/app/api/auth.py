@@ -304,7 +304,7 @@ def _confirm(db, user: User, body: TotpConfirm, settings) -> None:
 @router.post("/me/totp/disable", status_code=status.HTTP_204_NO_CONTENT)
 def totp_disable(body: TotpConfirm, user: CurrentUser, db: DB, settings: SettingsDep) -> None:
     _confirm(db, user, body, settings)
-    clear_totp(user)
+    totp.clear_totp(user)
     audit.record(db, user, "totp_disable", "user", user.username)
     db.commit()
 
@@ -319,10 +319,3 @@ def totp_new_codes(
     audit.record(db, user, "recovery_codes_renewed", "user", user.username)
     db.commit()
     return RecoveryOut(recovery_codes=codes)
-
-
-def clear_totp(user: User) -> None:
-    user.totp_enabled = False
-    user.totp_secret = None
-    user.totp_last_step = None
-    user.recovery_codes = []

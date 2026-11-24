@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from app import audit
 from app.api.deps import DB, SettingsDep
+from app.dates import months_back
 from app.models import L3UseCase, OutputMetric
 from app.security import Editor, Reader
 
@@ -38,15 +39,6 @@ def parse_period(s: str) -> date:
     if not m or not 1 <= int(m.group(2)) <= 12:
         raise ValueError(f"period '{s}' is not YYYY-MM")
     return date(int(m.group(1)), int(m.group(2)), 1)
-
-
-def months_back(n: int, today: date | None = None) -> list[date]:
-    t = (today or date.today()).replace(day=1)
-    out = []
-    for k in range(n - 1, -1, -1):
-        y, m = divmod(t.year * 12 + t.month - 1 - k, 12)
-        out.append(date(y, m + 1, 1))
-    return out
 
 
 class MetricIn(BaseModel):

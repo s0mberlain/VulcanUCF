@@ -6,6 +6,7 @@ from app.api.deps import DB
 from app.models import AuthSource, Role, TestAttachment, TestCase, User, UserSession
 from app.schemas import UserCreate, UserOut, UserUpdate
 from app.security import Admin, check_password_policy, hash_password
+from app.totp import clear_totp
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -153,8 +154,6 @@ def delete_user(user_id: int, admin: Admin, db: DB) -> None:
 @router.delete("/{user_id}/totp", response_model=UserOut)
 def reset_totp(user_id: int, admin: Admin, db: DB) -> User:
     """Turn off two-factor login, e.g. when someone lost their phone and recovery codes."""
-    from app.api.auth import clear_totp
-
     user = _get(db, user_id)
     clear_totp(user)
     db.execute(delete(UserSession).where(UserSession.user_id == user.id))

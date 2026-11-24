@@ -407,7 +407,7 @@ def _after(db, settings, t: TestCase, before_rules: set[int]) -> None:
 @router.get("/tests/{tid}", response_model=TestDetail)
 def get_test(tid: int, user: Reader, db: DB) -> TestDetail:
     t = _test(db, user, tid)
-    return out_detail(db, user, t, _open_gap_tests(db) if not _red(user) else None)
+    return out_detail(db, user, t, _open_gap_tests(db, t.technique) if not _red(user) else None)
 
 
 @router.get("/tests/{tid}/events", response_model=list[EventOut])
@@ -433,7 +433,7 @@ def open_round(tid: int, user: Reader, db: DB) -> TestDetail:
     purple.add_event(db, t, "round_opened", _side(user), user.username, n)
     audit.record(db, user, "round_open", "test", f"{t.id}: {t.title}", {"round": n})
     db.commit()
-    return out_detail(db, user, t, _open_gap_tests(db) if not _red(user) else None)
+    return out_detail(db, user, t, _open_gap_tests(db, t.technique) if not _red(user) else None)
 
 
 @router.delete("/tests/{tid}/rounds/{number}", response_model=TestDetail)
@@ -451,7 +451,7 @@ def delete_round(tid: int, number: int, user: Reader, db: DB) -> TestDetail:
     purple.add_event(db, t, "round_deleted", _side(user), user.username, number)
     audit.record(db, user, "round_delete", "test", f"{t.id}: {t.title}", {"round": number})
     db.commit()
-    return out_detail(db, user, t, _open_gap_tests(db) if not _red(user) else None)
+    return out_detail(db, user, t, _open_gap_tests(db, t.technique) if not _red(user) else None)
 
 
 @router.put("/tests/{tid}/rounds/{number}/red", response_model=TestDetail)
@@ -484,7 +484,7 @@ def record_round_red(
     )
     _after(db, settings, t, before)
     db.commit()
-    return out_detail(db, user, t, _open_gap_tests(db) if not _red(user) else None)
+    return out_detail(db, user, t, _open_gap_tests(db, t.technique) if not _red(user) else None)
 
 
 @router.put("/tests/{tid}/rounds/{number}/blue", response_model=TestDetail)
@@ -516,73 +516,7 @@ def record_round_blue(
     )
     _after(db, settings, t, before)
     db.commit()
-    return out_detail(db, user, t, _open_gap_tests(db))
-
-
-# Earlier endpoints of PROJ-3: they act on the latest round
-
-
-class LegacyRedIn(BaseModel):
-    exec_status: TestStatus
-    executed_at: datetime | None = None
-    red_notes: Notes = ""
-    expected_version: int | None = None
-
-
-class LegacyBlueIn(BaseModel):
-    outcome: TestOutcome | None = None
-    detected_at: datetime | None = None
-    blue_notes: Notes = ""
-    expected_version: int | None = None
-
-
-@router.put("/tests/{tid}/red", response_model=TestOut)
-def record_red(tid: int, body: LegacyRedIn, user: Reader, db: DB, settings: SettingsDep) -> TestOut:
-    t = _test(db, user, tid)
-    r = purple.latest_round(t)
-    if r is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Round not found")
-    record_round_red(
-        tid,
-        r.number,
-        RoundRedIn(
-            exec_status=body.exec_status,
-            started_at=body.executed_at,
-            red_notes=body.red_notes,
-            executed_what=r.executed_what,
-            ended_at=r.ended_at,
-            expected_version=body.expected_version,
-        ),
-        user,
-        db,
-        settings,
-    )
-    return out_test(db, user, t, _open_gap_tests(db) if not _red(user) else None)
-
-
-@router.put("/tests/{tid}/blue", response_model=TestOut)
-def record_blue(
-    tid: int, body: LegacyBlueIn, user: Editor, db: DB, settings: SettingsDep
-) -> TestOut:
-    t = _test(db, user, tid)
-    r = purple.latest_round(t)
-    if r is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Round not found")
-    record_round_blue(
-        tid,
-        r.number,
-        RoundBlueIn(
-            outcome=body.outcome,
-            detected_at=body.detected_at,
-            detected_by=[d.name for d in r.detections],
-            blue_notes=body.blue_notes,
-            expected_version=body.expected_version,
-        ),
-        user,
-        db,
-        settings,
-    )
-    return out_test(db, user, t, _open_gap_tests(db))
+    return out_detail(db, user, t, _open_gap_tests(db, t.technique))
 
 
 # ------------------------------------------------------------------ comments
@@ -601,7 +535,7 @@ def add_comment(tid: int, body: CommentIn, user: Reader, db: DB) -> TestDetail:
     )
     audit.record(db, user, "comment", "test", f"{t.id}: {t.title}", {"round": body.round_number})
     db.commit()
-    return out_detail(db, user, t, _open_gap_tests(db) if not _red(user) else None)
+    return out_detail(db, user, t, _open_gap_tests(db, t.technique) if not _red(user) else None)
 
 
 @router.delete("/tests/{tid}/comments/{eid}", response_model=TestDetail)
@@ -615,7 +549,7 @@ def remove_comment(tid: int, eid: int, user: Reader, db: DB) -> TestDetail:
     e.removed_by, e.removed_at, e.text = user.username, purple.utcnow(), ""
     audit.record(db, user, "comment_remove", "test", f"{t.id}: {t.title}", {"by": e.author})
     db.commit()
-    return out_detail(db, user, t, _open_gap_tests(db))
+    return out_detail(db, user, t, _open_gap_tests(db, t.technique))
 
 
 # ------------------------------------------------------------------ quick tests and collaboration
@@ -662,7 +596,7 @@ def create_quick_test(body: QuickIn, user: Editor, db: DB, settings: SettingsDep
     )
     _refresh(db, settings, _rule_ids(t))
     db.commit()
-    return out_test(db, user, t, _open_gap_tests(db))
+    return out_test(db, user, t, _open_gap_tests(db, t.technique))
 
 
 @router.post("/campaigns/{cid}/collaboration")

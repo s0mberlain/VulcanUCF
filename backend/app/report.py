@@ -257,12 +257,12 @@ class Report(FPDF):
 
 def build(db: Session, settings: Settings) -> bytes:
     from app import drivers
-    from app.api import attack_api, growth, output, scores, snapshots
+    from app.api import attack_api, output, priorities, scores, snapshots
 
     s = scores.scores(None, db, settings)
     k = s.kpis
     trends = snapshots.trends(None, db, settings)
-    gaps = growth.gaps(None, db, settings, None, 1, True)
+    gaps = priorities.gaps(None, db, settings, None, 1, True)
     due = scores.verification_due(None, db, settings, 0)
     cov = attack_api.coverage(None, db, settings)
     out = output.summary(None, db, 12)

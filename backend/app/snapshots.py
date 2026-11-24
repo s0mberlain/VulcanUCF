@@ -19,6 +19,7 @@ from app.models import (
     Snapshot,
     l3_references,
 )
+from app.score_queries import compute_scores
 from app.scoring import SCORED_STATES
 
 log = logging.getLogger(__name__)
@@ -47,8 +48,6 @@ def _r(v: float | None) -> float | None:
 
 def capture(db: Session, default_interval: int, today: date | None = None) -> dict:
     """All numbers a snapshot keeps: KPIs, per-L1 and per-L2 scores and per-rule state."""
-    from app.api.scores import compute_scores  # avoid a cycle at import time
-
     res, l1s, l2s, l3s = compute_scores(db, default_interval, today)
     k = res.kpis
     used = dict(

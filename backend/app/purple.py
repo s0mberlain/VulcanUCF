@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Campaign,
@@ -71,27 +71,49 @@ class RuleState:
     total: int = 0
 
 
-def _result_links(db: Session, rule_id: int) -> list[tuple[TestRule, TestCase]]:
+def _result_links(db: Session, rule_ids: list[int]) -> dict[int, list[tuple[TestRule, TestCase]]]:
+    """Rule id -> its links to tests that have a result."""
+    out: dict[int, list[tuple[TestRule, TestCase]]] = {i: [] for i in rule_ids}
+    if not rule_ids:
+        return out
     q = (
         select(TestRule, TestCase)
         .join(TestCase, TestCase.id == TestRule.test_id)
         .where(
-            TestRule.l3_id == rule_id,
+            TestRule.l3_id.in_(rule_ids),
             TestCase.exec_status == TestStatus.executed,
             TestCase.outcome.is_not(None),
             TestCase.executed_at.is_not(None),
         )
     )
-    return [(a, b) for a, b in db.execute(q)]
+    for link, test in db.execute(q):
+        out[link.l3_id].append((link, test))
+    return out
 
 
 def rule_state(
     db: Session, rule: L3UseCase, default_days: int, today: date | None = None
 ) -> RuleState:
     """How far the tests of this rule cover its scopes right now."""
+    return _state(rule, _result_links(db, [rule.id])[rule.id], default_days, today)
+
+
+def rule_states(
+    db: Session, rules: list[L3UseCase], default_days: int, today: date | None = None
+) -> dict[int, RuleState]:
+    """rule_state for many rules with one query (load the rules with their references)."""
+    links = _result_links(db, [r.id for r in rules])
+    return {r.id: _state(r, links[r.id], default_days, today) for r in rules}
+
+
+def _state(
+    rule: L3UseCase,
+    links: list[tuple[TestRule, TestCase]],
+    default_days: int,
+    today: date | None = None,
+) -> RuleState:
     today = today or date.today()
     scopes = rule_scopes(rule) or [""]
-    links = _result_links(db, rule.id)
     days = interval_days(rule, default_days)
     out: list[ScopeState] = []
     for sc in scopes:
@@ -240,19 +262,26 @@ class Gap:
     accepted_at: datetime | None = None
 
 
-def gaps(db: Session) -> list[Gap]:
-    """Gaps from tests: per rule, scope and technique, the latest executed test decides."""
-    tests = list(
-        db.scalars(
-            select(TestCase).where(
-                TestCase.exec_status == TestStatus.executed,
-                TestCase.outcome.is_not(None),
-                TestCase.executed_at.is_not(None),
-            )
+def gaps(db: Session, technique: str | None = None) -> list[Gap]:
+    """Gaps from tests: per rule, scope and technique, the latest executed test decides.
+
+    With `technique` only the gaps of that technique are worked out. A gap is keyed by its
+    technique, so that is exact for every test of the technique (used for one test's badge).
+    """
+    q = (
+        select(TestCase)
+        .where(
+            TestCase.exec_status == TestStatus.executed,
+            TestCase.outcome.is_not(None),
+            TestCase.executed_at.is_not(None),
         )
+        .options(selectinload(TestCase.rules))
     )
-    camp = {c.id: c.name for c in db.scalars(select(Campaign))}
-    rules = {r.id: r for r in db.scalars(select(L3UseCase))}
+    if technique is not None:
+        q = q.where(TestCase.technique == technique)
+    tests = list(db.scalars(q))
+    camp = {i: n for i, n in db.execute(select(Campaign.id, Campaign.name))}
+    rules = {r.id: r for r in db.execute(select(L3UseCase.id, L3UseCase.code, L3UseCase.name))}
     latest: dict[tuple[int | None, str, str], TestCase] = {}
 
     def offer(key: tuple[int | None, str, str], t: TestCase) -> None:
@@ -271,15 +300,21 @@ def gaps(db: Session) -> list[Gap]:
             for sc in scopes:
                 offer((link.l3_id, t.technique, sc), t)
     acc = {}
-    for a in db.scalars(select(GapAcceptance).order_by(GapAcceptance.id)):
+    aq = select(GapAcceptance).order_by(GapAcceptance.id)
+    if technique is not None:
+        aq = aq.where(GapAcceptance.technique == technique)
+    for a in db.scalars(aq):
         acc[(a.l3_id, a.technique, a.scope, a.test_id)] = a
     # an acceptance covers one result: a later result of the same test starts the question again
     last_result = {}
-    for e in db.execute(
+    eq = (
         select(TestEvent.test_id, TestEvent.at)
         .where(TestEvent.kind.in_(("result", "result_changed")))
         .order_by(TestEvent.id)
-    ):
+    )
+    if technique is not None:
+        eq = eq.where(TestEvent.test_id.in_([t.id for t in tests]))
+    for e in db.execute(eq):
         last_result[e[0]] = e[1]
     out = []
     for (rid, tech, sc), t in latest.items():
@@ -324,7 +359,7 @@ def account_expiry(user: User, db: Session) -> datetime | None:
 
 
 def user_campaigns(db: Session, user: User) -> list[Campaign]:
-    return [c for c in db.scalars(select(Campaign)) if any(a.id == user.id for a in c.accounts)]
+    return list(db.scalars(select(Campaign).where(Campaign.accounts.any(User.id == user.id))))
 
 
 def account_expired(user: User, db: Session) -> bool:

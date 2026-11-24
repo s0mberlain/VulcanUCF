@@ -8,19 +8,17 @@ Rules of access (enforced here, not only in the UI):
   is closed. They never see rules, use cases or other pages (see security._gate).
 """
 
-import hashlib
 import re
 from datetime import date, datetime
 from typing import Annotated, Literal
-from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, StringConstraints
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
-from app import attack, audit, purple
-from app.api import evidence as ev
+from app import attack, audit, files, purple
 from app.api.deps import DB, SettingsDep
 from app.models import (
     Campaign,
@@ -303,10 +301,30 @@ class AcceptIn(BaseModel):
 # ------------------------------------------------------------------ serialisation
 
 
-def _links(db, t: TestCase) -> list[LinkOut]:
+# what out_test reads of a test; load lists of tests with these to avoid a query per test
+TEST_LOAD = (
+    selectinload(TestCase.campaign),
+    selectinload(TestCase.rules),
+    selectinload(TestCase.attachments),
+    selectinload(TestCase.rounds),
+)
+
+
+def linked_rules(db, tests: list[TestCase]) -> dict[int, L3UseCase]:
+    """The rules the tests link to, with their scopes, in one query."""
+    ids = {r.l3_id for t in tests for r in t.rules if r.l3_id}
+    if not ids:
+        return {}
+    q = select(L3UseCase).where(L3UseCase.id.in_(ids)).options(selectinload(L3UseCase.references))
+    return {r.id: r for r in db.scalars(q)}
+
+
+def _links(db, t: TestCase, rules: dict[int, L3UseCase] | None = None) -> list[LinkOut]:
+    if rules is None:
+        rules = linked_rules(db, [t])
     out = []
     for r in t.rules:
-        rule = db.get(L3UseCase, r.l3_id) if r.l3_id else None
+        rule = rules.get(r.l3_id) if r.l3_id else None
         out.append(
             LinkOut(
                 l3_code=rule.code if rule else r.rule_code,
@@ -320,7 +338,6 @@ def _links(db, t: TestCase) -> list[LinkOut]:
 
 
 def _att(a: TestAttachment, t: TestCase | None = None) -> AttachmentOut:
-    ext = ev._ext(a.filename)
     number = None
     if t is not None and a.round_id is not None:
         number = next((r.number for r in t.rounds if r.id == a.round_id), None)
@@ -332,7 +349,7 @@ def _att(a: TestAttachment, t: TestCase | None = None) -> AttachmentOut:
         size=a.size,
         uploaded_by=a.uploaded_by,
         uploaded_at=a.uploaded_at,
-        viewable=ev.TYPES.get(ext, ("", (), False))[2],
+        viewable=files.viewable(a.filename),
     )
 
 
@@ -342,11 +359,23 @@ def _ttd(t: TestCase) -> int | None:
     return None
 
 
-def _open_gap_tests(db) -> set[int]:
-    return {g.test_id for g in purple.gaps(db) if not g.accepted}
+def _open_gap_tests(db, technique: str | None = None) -> set[int]:
+    """Tests with an open gap; with a technique only (and exactly) those of that technique."""
+    return {g.test_id for g in purple.gaps(db, technique) if not g.accepted}
 
 
-def out_test(db, user: User, t: TestCase, gap_tests: set[int] | None = None) -> TestOut:
+def out_tests(db, user: User, tests: list[TestCase], gap_tests: set[int] | None) -> list[TestOut]:
+    rules = {} if _red(user) else linked_rules(db, tests)
+    return [out_test(db, user, t, gap_tests, rules) for t in tests]
+
+
+def out_test(
+    db,
+    user: User,
+    t: TestCase,
+    gap_tests: set[int] | None = None,
+    rules: dict[int, L3UseCase] | None = None,
+) -> TestOut:
     red = _red(user)
     blue_ok = _blue_visible(user, t)
     running = t.campaign is None or t.campaign.status == CampaignStatus.running
@@ -366,7 +395,7 @@ def out_test(db, user: User, t: TestCase, gap_tests: set[int] | None = None) -> 
         expected_detection=t.expected_detection,
         created_by=t.created_by,
         created_by_red_team=t.created_by_red_team,
-        links=[] if red else _links(db, t),
+        links=[] if red else _links(db, t, rules),
         needs_rules=t.created_by_red_team and not t.rules,
         exec_status=t.exec_status,
         executed_at=t.executed_at,
@@ -608,7 +637,14 @@ def save_to_library(tid: int, user: Editor, db: DB) -> TemplateOut:
 
 @router.get("/campaigns", response_model=list[CampaignOut])
 def list_campaigns(user: Reader, db: DB) -> list[CampaignOut]:
-    rows = db.scalars(select(Campaign).order_by(Campaign.planned_start.desc(), Campaign.id.desc()))
+    rows = db.scalars(
+        select(Campaign)
+        .options(
+            selectinload(Campaign.accounts),
+            selectinload(Campaign.tests).selectinload(TestCase.rules),
+        )
+        .order_by(Campaign.planned_start.desc(), Campaign.id.desc())
+    )
     return [
         out_campaign(user, c)
         for c in rows
@@ -660,9 +696,17 @@ def create_campaign(body: CampaignIn, user: Editor, db: DB) -> CampaignOut:
 def get_campaign(cid: int, user: Reader, db: DB) -> CampaignDetail:
     c = _campaign(db, user, cid)
     gap_tests = _open_gap_tests(db) if not _red(user) else None
+    tests = list(
+        db.scalars(
+            select(TestCase)
+            .where(TestCase.campaign_id == c.id)
+            .options(*TEST_LOAD)
+            .order_by(TestCase.id)
+        )
+    )
     return CampaignDetail(
         **out_campaign(user, c).model_dump(),
-        test_cases=[out_test(db, user, t, gap_tests) for t in c.tests],
+        test_cases=out_tests(db, user, tests, gap_tests),
     )
 
 
@@ -859,19 +903,19 @@ def list_quick_tests(
     open_gaps: bool = False,
 ) -> list[TestOut]:
     gap_tests = _open_gap_tests(db)
-    rows = db.scalars(
-        select(TestCase).where(TestCase.campaign_id.is_(None)).order_by(TestCase.id.desc())
+    q = (
+        select(TestCase)
+        .where(TestCase.campaign_id.is_(None))
+        .options(*TEST_LOAD)
+        .order_by(TestCase.id.desc())
     )
-    out = []
-    for t in rows:
-        if outcome and t.outcome != outcome:
-            continue
-        if technique and t.technique != technique:
-            continue
-        if open_gaps and t.id not in gap_tests:
-            continue
-        out.append(out_test(db, user, t, gap_tests))
-    return out
+    if outcome:
+        q = q.where(TestCase.outcome == outcome)
+    if technique:
+        q = q.where(TestCase.technique == technique)
+    if open_gaps:
+        q = q.where(TestCase.id.in_(gap_tests))
+    return out_tests(db, user, list(db.scalars(q)), gap_tests)
 
 
 # ------------------------------------------------------------------ attachments
@@ -903,33 +947,21 @@ async def upload(
     )
     if round is not None and target is None:
         raise HTTPException(404, "Round not found")
-    name = ev._safe_name(file.filename or "")
-    ext = ev._ext(name)
-    if ext not in ev.TYPES or not name[: -len(ext) - 1]:
-        raise HTTPException(
-            422, "This file type is not accepted. Allowed: PDF, JPG, PNG and diagram files"
-        )
-    data = await file.read(ev.MAX_FILE + 1)
-    if len(data) > ev.MAX_FILE:
-        raise HTTPException(413, "The file is larger than 20 MB")
-    if not data:
-        raise HTTPException(422, "The file is empty")
-    if not ev._content_ok(ext, data):
-        raise HTTPException(422, f"The file content does not match a .{ext} file")
-    limit = settings.evidence_max_total_mb * 1024 * 1024
-    if limit and ev.used_bytes(db) + len(data) > limit:
-        raise HTTPException(
-            413, f"The evidence storage is full ({settings.evidence_max_total_mb} MB)"
-        )
+    name, kind, data, sha = await files.read_upload(
+        file,
+        db,
+        settings,
+        types_message="This file type is not accepted. Allowed: PDF, JPG, PNG and diagram files",
+    )
     if len(t.attachments) >= MAX_TEST_FILES:
         raise HTTPException(422, f"A test can have at most {MAX_TEST_FILES} files")
     a = TestAttachment(
         test_id=t.id,
         side=side,
         filename=name,
-        content_type=ev.TYPES[ext][0],
+        content_type=files.TYPES[kind][0],
         size=len(data),
-        sha256=hashlib.sha256(data).hexdigest(),
+        sha256=sha,
         data=data,
         uploaded_by=user.username,
         round_id=target.id if target else None,
@@ -970,8 +1002,7 @@ def _attachment(db, user: User, aid: int) -> TestAttachment:
 @router.get("/test-attachments/{aid}/content")
 def attachment_content(aid: int, user: Reader, db: DB, download: bool = False) -> Response:
     a = _attachment(db, user, aid)
-    viewable = ev.TYPES.get(ev._ext(a.filename), ("", (), False))[2]
-    inline = viewable and not download
+    inline = files.viewable(a.filename) and not download
     audit.record_access(
         db,
         user,
@@ -980,24 +1011,7 @@ def attachment_content(aid: int, user: Reader, db: DB, download: bool = False) -
         f"{a.test_id}",
         {"file": a.filename},
     )
-    ascii_name = ev._UNSAFE.sub("_", a.filename) or "evidence"
-    disposition = (
-        f"{'inline' if inline else 'attachment'}; "
-        f"filename=\"{ascii_name}\"; filename*=UTF-8''{quote(a.filename)}"
-    )
-    return Response(
-        a.data,
-        media_type=a.content_type if viewable else "application/octet-stream",
-        headers={
-            "Content-Disposition": disposition,
-            "Content-Security-Policy": (
-                "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; "
-                "object-src 'self'; frame-ancestors 'self'"
-            ),
-            "X-Frame-Options": "SAMEORIGIN",
-            "Cache-Control": "private, no-store",
-        },
-    )
+    return files.file_response(a.data, a.filename, a.content_type, inline)
 
 
 @router.delete("/test-attachments/{aid}", status_code=204)
@@ -1111,17 +1125,24 @@ def rule_tests(code: str, user: Reader, db: DB, settings: SettingsDep) -> RuleTe
     if rule is None:
         raise HTTPException(404, "Rule not found")
     st = purple.rule_state(db, rule, _defaults(settings))
-    ids = [r.test_id for r in db.scalars(select(TestRule).where(TestRule.l3_id == rule.id))]
-    tests = [db.get(TestCase, i) for i in sorted(set(ids), reverse=True)]
-    gap_tests = _open_gap_tests(db)
+    tests = list(
+        db.scalars(
+            select(TestCase)
+            .where(TestCase.rules.any(TestRule.l3_id == rule.id))
+            .options(*TEST_LOAD)
+            .order_by(TestCase.id.desc())
+        )
+    )
+    all_gaps = purple.gaps(db)
+    gap_tests = {g.test_id for g in all_gaps if not g.accepted}
     return RuleTests(
         state=st.state,
         covered=st.covered,
         total=st.total,
         verified_date=st.verified_date,
         scopes=[ScopeOut(**vars(s)) for s in st.scopes],
-        tests=[out_test(db, user, t, gap_tests) for t in tests if t],
-        gaps=[_gap_out(g) for g in purple.gaps(db) if g.l3_id == rule.id],
+        tests=out_tests(db, user, tests, gap_tests),
+        gaps=[_gap_out(g) for g in all_gaps if g.l3_id == rule.id],
         interval_days=purple.interval_days(rule, _defaults(settings)),
     )
 
@@ -1138,17 +1159,29 @@ def l2_summary(code: str, _: Reader, db: DB, settings: SettingsDep) -> L2Summary
     l2 = db.scalar(select(L2UseCase).where(L2UseCase.code == code))
     if l2 is None:
         raise HTTPException(404, "Use case not found")
-    ids = {r.id for r in l2.children}
-    states = {"verified": 0, "partial": 0, "issues": 0, "due": 0, "none": 0}
-    for r in l2.children:
-        states[purple.rule_state(db, r, _defaults(settings)).state] += 1
-    test_ids = (
-        {x.test_id for x in db.scalars(select(TestRule).where(TestRule.l3_id.in_(ids)))}
-        if ids
-        else set()
+    rules = list(
+        db.scalars(
+            select(L3UseCase)
+            .where(L3UseCase.l2_id == l2.id)
+            .options(selectinload(L3UseCase.references))
+        )
     )
-    tests = [db.get(TestCase, i) for i in test_ids]
-    dates = [purple.day(t.executed_at) for t in tests if t and t.executed_at]
+    ids = {r.id for r in rules}
+    states = {"verified": 0, "partial": 0, "issues": 0, "due": 0, "none": 0}
+    for st in purple.rule_states(db, rules, _defaults(settings)).values():
+        states[st.state] += 1
+    runs = (
+        db.execute(
+            select(TestCase.id, TestCase.executed_at)
+            .join(TestRule, TestRule.test_id == TestCase.id)
+            .where(TestRule.l3_id.in_(ids))
+            .distinct()
+        ).all()
+        if ids
+        else []
+    )
+    test_ids = {i for i, _ in runs}
+    dates = [purple.day(at) for _, at in runs if at]
     open_gaps = sum(1 for g in purple.gaps(db) if not g.accepted and g.l3_id in ids)
     return L2Summary(
         tests=len(test_ids),
