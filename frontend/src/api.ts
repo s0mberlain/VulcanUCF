@@ -413,6 +413,32 @@ export interface LifecycleState {
   allowed: Lifecycle[];
   events: LifecycleEvent[];
 }
+export type TaskKind = "review" | "tune" | "update_settings" | "other";
+export interface Task {
+  id: number;
+  level: Level;
+  code: string;
+  name: string;
+  kind: TaskKind;
+  title: string;
+  body: string;
+  status: "open" | "done";
+  created_by: string;
+  created_at: string;
+  due_date: string | null;
+  overdue: boolean;
+  assignee: string | null;
+  done_by: string | null;
+  done_at: string | null;
+}
+export interface TaskInput {
+  kind?: TaskKind;
+  title?: string;
+  body?: string;
+  due_date?: string | null;
+  assignee?: string | null;
+  status?: "open" | "done";
+}
 export interface BulkResult {
   changed: number;
   results: { code: string; ok: boolean; error: string | null }[];
@@ -1217,6 +1243,18 @@ export const api = {
   l2: (code: string) => request<L2>("GET", `/api/l2/${enc(code)}`),
   createL2: (body: L2Input & { code: string; name: string }) => request<L2>("POST", "/api/l2", body),
   updateL2: (code: string, body: L2Input) => request<L2>("PATCH", `/api/l2/${enc(code)}`, body),
+  /** Tasks on L2 use cases and L3 rules (#74). */
+  tasks: (filter: { status?: "open" | "done" | "all"; assignee?: string; kind?: string; overdue?: boolean } = {}) =>
+    request<Task[]>(
+      "GET",
+      `/api/tasks?${new URLSearchParams(Object.entries(filter).filter(([, v]) => v !== undefined && v !== "" && v !== false).map(([k, v]) => [k, String(v)]))}`,
+    ),
+  ownerTasks: (level: Level, code: string) => request<Task[]>("GET", `/api/${level}/${enc(code)}/tasks`),
+  addTask: (level: Level, code: string, body: TaskInput & { title: string }) =>
+    request<Task>("POST", `/api/${level}/${enc(code)}/tasks`, body),
+  updateTask: (id: number, body: TaskInput) => request<Task>("PATCH", `/api/tasks/${id}`, body),
+  deleteTask: (id: number) => request<void>("DELETE", `/api/tasks/${id}`),
+  taskAssignees: () => request<{ username: string; display_name: string }[]>("GET", "/api/tasks/assignees"),
   /** Bulk edit of L2 use cases (#73): each code is changed on its own, failures are listed. */
   bulkUpdateL2: (body: BulkL2Update) => request<BulkResult>("POST", "/api/l2-bulk/update", body),
   bulkLifecycleL2: (body: LifecycleChange & { codes: string[] }) =>

@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -488,6 +489,54 @@ class ImportedIncident(Base):
     imported_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+# ---------------------------------------------------------------- tasks (issue #74, PROJ-5)
+
+
+class TaskKind(enum.StrEnum):
+    review = "review"
+    tune = "tune"
+    update_settings = "update_settings"
+    other = "other"
+
+
+class TaskStatus(enum.StrEnum):
+    open = "open"
+    done = "done"
+
+
+class Task(Base):
+    """A to-do on an L2 use case or an L3 rule (review, tune, update settings ...)."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("(l2_id IS NULL) <> (l3_id IS NULL)", name="ck_tasks_one_owner"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    l2_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l2_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[TaskKind] = mapped_column(String(32), default=TaskKind.other)
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text, default="")  # Markdown
+    status: Mapped[TaskStatus] = mapped_column(String(16), default=TaskStatus.open, index=True)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    assignee: Mapped[str | None] = mapped_column(String(64), index=True)
+    done_by: Mapped[str | None] = mapped_column(String(64))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    l2: Mapped["L2UseCase | None"] = relationship()
+    l3: Mapped["L3UseCase | None"] = relationship()
 
 
 # ---------------------------------------------------------------- integrations (M7)

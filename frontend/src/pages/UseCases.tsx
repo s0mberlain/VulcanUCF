@@ -20,6 +20,7 @@ import { Markdown, MarkdownField } from "../components/Markdown";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { L2TestSummaryLine } from "../components/RuleTests";
+import { TasksPanel } from "../components/Tasks";
 import { BulkBar, BulkDialog, type BulkAction } from "../components/BulkEdit";
 import {
   Chips,
@@ -562,6 +563,7 @@ export default function UseCases() {
           )}
           {/* L2 use cases only group rules: no configuration here, rules have it (issue #25) */}
           {selected && <LifecyclePanel key={selected.code} level="l2" code={selected.code} onChanged={refresh} />}
+          {selected && <TasksPanel key={"t" + selected.code} level="l2" code={selected.code} />}
         </section>
       </div>
       )}

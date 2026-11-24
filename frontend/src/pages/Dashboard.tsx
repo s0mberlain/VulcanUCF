@@ -106,6 +106,8 @@ function Attention({
   gaps,
   interviews,
   testGaps,
+  tasksLate,
+  tasksMine,
   ready,
 }: {
   overdue: number | null;
@@ -113,6 +115,8 @@ function Attention({
   gaps: number | null;
   interviews: number | null;
   testGaps: number | null;
+  tasksLate: number | null;
+  tasksMine: number | null;
   ready: boolean;
 }) {
   const items = [
@@ -121,6 +125,8 @@ function Attention({
     { n: gaps, label: t("gaps in systems"), to: "/systems", action: t("Show systems") },
     { n: interviews, label: t("interviews due"), to: "/systems?due=1", action: t("Show systems") },
     { n: testGaps, label: t("detection gaps from tests"), to: "/verification/gaps", action: t("Show gaps") },
+    { n: tasksLate, label: t("tasks past their due date"), to: "/tasks?overdue=1", action: t("Show tasks") },
+    { n: tasksMine, label: t("open tasks assigned to you"), to: "/tasks?assignee=me", action: t("Show tasks") },
   ].filter((x) => x.n);
   return (
     <section className="card stack-sm attention" aria-labelledby="needh">
@@ -156,6 +162,8 @@ export default function Dashboard() {
   const requests = useLoad<{ requests: OverviewRequest[] }>(() => api.detectionRequests());
   const systems = useLoad<SystemRow[]>(() => api.systems());
   const testGaps = useLoad(() => api.testGapCount());
+  const { user } = useAuth();
+  const tasks = useLoad(() => api.tasks());
   const s = scores.data;
   const tiles = kpiTiles(s ? s.kpis : ({} as Kpis));
   const ready = due.data !== null && requests.data !== null && systems.data !== null && interviewsDue.data !== null;
@@ -194,6 +202,8 @@ export default function Dashboard() {
         gaps={systems.data ? systems.data.reduce((a, x) => a + x.gaps, 0) : null}
         interviews={interviewsDue.data?.due ?? null}
         testGaps={testGaps.data?.open ?? null}
+        tasksLate={tasks.data ? tasks.data.filter((x) => x.overdue).length : null}
+        tasksMine={tasks.data ? tasks.data.filter((x) => x.assignee === user?.username).length : null}
       />
 
       <section className="stack-sm" aria-labelledby="kpih">

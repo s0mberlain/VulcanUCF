@@ -5,6 +5,7 @@ import { api, type L3, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
+import { TasksPanel } from "../components/Tasks";
 import { DriverBlock } from "../components/Drivers";
 import { MarkdownField } from "../components/Markdown";
 import OutputPanel from "../components/OutputPanel";
@@ -452,6 +453,7 @@ export default function RuleDetail() {
             </section>
 
             <LifecyclePanel level="l3" code={code} onChanged={() => void rule.reload()} />
+            <TasksPanel level="l3" code={code} />
             {editor && (
               <p className="instant-note">
                 {t(

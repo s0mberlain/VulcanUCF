@@ -36,6 +36,7 @@ from app.api import (
     scores,
     snapshots,
     systems,
+    tasks,
     transfer,
     usecases,
     users,
@@ -220,6 +221,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         evidence.router,
         purple.router,
         rounds.router,
+        tasks.router,
     ):
         api.include_router(r)
     app.include_router(api)
