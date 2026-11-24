@@ -27,6 +27,7 @@ import {
   GapBadge,
   Modal,
   MultiSelect,
+  SelectSearch,
   ShowMore,
   StatusPill,
   useLoad,
@@ -285,78 +286,41 @@ export default function UseCases() {
             {[filter.bd, filter.src, filter.cd, filter.sys].filter(Boolean).length > 0 ? ` (${[filter.bd, filter.src, filter.cd, filter.sys].filter(Boolean).length})` : ""}
           </summary>
           <div className="uc-filter-fields">
-        <label className="sr-only" htmlFor="f-bd">
-          {t("Business driver")}
-        </label>
-        <select
-          id="f-bd"
-          className="input input-sm"
-          value={filter.bd}
-          onChange={(e) => setParam({ bd: e.target.value || null, l2: null })}
-        >
-          <option value="">{t("All business drivers")}</option>
-          {cat.data?.drivers.map((d) => (
-            <option key={d.id} value={d.code}>
-              {d.code} · {d.name}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="f-src">
-          {t("Compliance source")}
-        </label>
-        <select
-          id="f-src"
-          className="input input-sm"
-          value={filter.src}
-          onChange={(e) => setParam({ src: e.target.value || null, cd: null, l2: null })}
-        >
-          <option value="">{t("All compliance sources")}</option>
-          {cat.data?.sources.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="f-cd">
-          {t("Compliance driver")}
-        </label>
-        <select
-          id="f-cd"
-          className="input input-sm"
-          value={filter.cd}
-          onChange={(e) => setParam({ cd: e.target.value || null, l2: null })}
-        >
-          <option value="">{t("All compliance drivers")}</option>
-          {cat.data?.sources
-            .filter((s) => !filter.src || String(s.id) === filter.src)
-            .map((s) => (
-              <optgroup key={s.id} label={s.name}>
-                {s.drivers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.ref}
-                    {c.name ? ` · ${c.name}` : ""}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-        </select>
-        <label className="sr-only" htmlFor="f-sys">
-          {t("System")}
-        </label>
-        <select
-          id="f-sys"
-          className="input input-sm"
-          value={filter.sys}
-          onChange={(e) => setParam({ sys: e.target.value || null, l2: null })}
-        >
-          <option value="">{t("All systems")}</option>
-          {cat.data?.systems.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.name}
-              {x.archived ? ` (${t("archived")})` : ""}
-            </option>
-          ))}
-        </select>
+            <SelectSearch
+              label={t("Business driver")}
+              allLabel={t("All business drivers")}
+              value={filter.bd}
+              onChange={(v) => setParam({ bd: v || null, l2: null })}
+              options={(cat.data?.drivers ?? []).map((d) => ({ value: d.code, label: `${d.code} · ${d.name}` }))}
+            />
+            <SelectSearch
+              label={t("Compliance source")}
+              allLabel={t("All compliance sources")}
+              value={filter.src}
+              onChange={(v) => setParam({ src: v || null, cd: null, l2: null })}
+              options={(cat.data?.sources ?? []).map((x) => ({ value: String(x.id), label: x.name }))}
+            />
+            <SelectSearch
+              label={t("Compliance driver")}
+              allLabel={t("All compliance drivers")}
+              value={filter.cd}
+              onChange={(v) => setParam({ cd: v || null, l2: null })}
+              options={(cat.data?.sources ?? [])
+                .filter((x) => !filter.src || String(x.id) === filter.src)
+                .flatMap((x) =>
+                  x.drivers.map((c) => ({ value: String(c.id), label: c.ref + (c.name ? ` · ${c.name}` : ""), group: x.name })),
+                )}
+            />
+            <SelectSearch
+              label={t("System")}
+              allLabel={t("All systems")}
+              value={filter.sys}
+              onChange={(v) => setParam({ sys: v || null, l2: null })}
+              options={(cat.data?.systems ?? []).map((x) => ({
+                value: String(x.id),
+                label: x.name + (x.archived ? ` (${t("archived")})` : ""),
+              }))}
+            />
           </div>
         </details>
         {refActive && (

@@ -814,8 +814,6 @@
   "e.g. ISO 27001": "bijv. ISO 27001",
   "Requirements and their links to use cases stay as they are.": "Eisen en hun koppelingen met use cases blijven behouden.",
   "Format {a}; extra identifiers may go before the number, e.g. {b}.": "Formaat {a}; extra kenmerken mogen vóór het nummer staan, bijv. {b}.",
-  "New entry…": "Nieuw item…",
-  "New entry for {list}": "Nieuw item voor {list}",
   "Settings": "Instellingen",
   "SIEM name": "SIEM-naam",
   "Copied": "Gekopieerd",
@@ -1613,5 +1611,7 @@
   "To count them, add the rule ID from the name (for example CC-CK) as a SIEM rule ID on the use case.": "Voeg om ze mee te tellen de regel-ID uit de naam (bijvoorbeeld CC-CK) toe als SIEM-regel-ID bij de use case.",
   "{n} rows could not be read and were skipped": "{n} regels konden niet worden gelezen en zijn overgeslagen",
   "{n} rows repeat an incident ID and were counted once.": "{n} regels herhalen een incident-ID en zijn één keer geteld.",
-  "Apply to {n} months": "Toepassen op {n} maanden"
+  "Apply to {n} months": "Toepassen op {n} maanden",
+  "Search or add…": "Zoeken of toevoegen …",
+  "Add “{name}”": "“{name}” toevoegen"
 }

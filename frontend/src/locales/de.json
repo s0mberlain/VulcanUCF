@@ -814,8 +814,6 @@
   "e.g. ISO 27001": "z. B. ISO 27001",
   "Requirements and their links to use cases stay as they are.": "Anforderungen und ihre Verknüpfungen zu Use Cases bleiben erhalten.",
   "Format {a}; extra identifiers may go before the number, e.g. {b}.": "Format {a}; zusätzliche Kennungen können vor der Nummer stehen, z. B. {b}.",
-  "New entry…": "Neuer Eintrag…",
-  "New entry for {list}": "Neuer Eintrag für {list}",
   "Settings": "Einstellungen",
   "SIEM name": "SIEM-Name",
   "Copied": "Kopiert",
@@ -1613,5 +1611,7 @@
   "To count them, add the rule ID from the name (for example CC-CK) as a SIEM rule ID on the use case.": "Um sie zu zählen, tragen Sie die Regel-ID aus dem Namen (zum Beispiel CC-CK) als SIEM-Regel-ID am Use Case ein.",
   "{n} rows could not be read and were skipped": "{n} Zeilen konnten nicht gelesen werden und wurden übersprungen",
   "{n} rows repeat an incident ID and were counted once.": "{n} Zeilen wiederholen eine Incident-ID und wurden einmal gezählt.",
-  "Apply to {n} months": "Auf {n} Monate anwenden"
+  "Apply to {n} months": "Auf {n} Monate anwenden",
+  "Search or add…": "Suchen oder hinzufügen …",
+  "Add “{name}”": "„{name}“ hinzufügen"
 }

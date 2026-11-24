@@ -1276,3 +1276,16 @@ input, select, textarea, progress { accent-color: var(--c-accent); }
 .more-details > summary:focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; border-radius: var(--radius); }
 .more-details > .stack-sm { padding: 0 14px 14px; }
 .modal form > .row-actions:last-child { position: sticky; bottom: -22px; background: var(--c-surface); padding: 12px 0 22px; margin-bottom: -22px; border-top: 1px solid var(--c-border); z-index: 2; }
+
+/* Searchable pickers (issue #76): same search box in every list, single-select filters */
+.picker-search { position: sticky; top: -6px; z-index: 1; margin: -6px -6px 4px; width: calc(100% + 12px); border-radius: var(--radius) var(--radius) 0 0; border-width: 0 0 1px; }
+.picker-empty { padding: 6px 8px; }
+.picker-option { display: block; width: 100%; text-align: left; min-height: 34px; padding: 6px 8px; border: 0; background: none; color: inherit; font: inherit; border-radius: var(--radius-sm); cursor: pointer; }
+.picker-option:hover, .picker-option:focus-visible { background: var(--c-subtle); outline: none; }
+.picker-option.active { font-weight: 600; color: var(--c-accent); }
+.multi-list label:focus-within { background: var(--c-subtle); }
+.select-search { min-width: 180px; max-width: 240px; flex: 0 1 220px; }
+.select-search .multi-summary { min-height: 34px; padding: 4px 28px 4px 10px; }
+.select-search-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-search .multi-summary:not(.has-value) .select-search-value { color: var(--c-muted); }
+.select-search .multi-list { min-width: 280px; }
