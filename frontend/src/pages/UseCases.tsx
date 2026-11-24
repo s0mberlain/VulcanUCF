@@ -21,6 +21,7 @@ import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDrivers
 import LifecyclePanel from "../components/LifecyclePanel";
 import { L2TestSummaryLine } from "../components/RuleTests";
 import { TasksPanel } from "../components/Tasks";
+import { loadLogSourceMap, logSourceWarning } from "../lib/logSources";
 import { BulkBar, BulkDialog, type BulkAction } from "../components/BulkEdit";
 import {
   Chips,
@@ -874,6 +875,7 @@ function RuleTable({
   heads: Record<string, ConfigCommit>;
   refLink: RefLink;
 }) {
+  const ls = useLoad(loadLogSourceMap);
   return (
     <div className="card table-card">
       <table className="table">
@@ -920,6 +922,7 @@ function RuleTable({
                   items={r.log_sources}
                   href={(s) => refLink("log_source", s)}
                   title={(s) => t("Show all rules with log source {name}", { name: s })}
+                  warn={(s) => logSourceWarning(ls.data?.get(s))}
                 />
               </td>
               <td>

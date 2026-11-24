@@ -28,6 +28,7 @@ from app.api import (
     gitsync_api,
     integrations,
     lifecycle,
+    log_sources,
     oidc,
     output,
     priorities,
@@ -222,6 +223,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         purple.router,
         rounds.router,
         tasks.router,
+        log_sources.router,
     ):
         api.include_router(r)
     app.include_router(api)

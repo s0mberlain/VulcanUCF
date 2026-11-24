@@ -491,6 +491,51 @@ class ImportedIncident(Base):
     )
 
 
+# ---------------------------------------------------------------- log source verification (#75)
+
+# The fixed check items of a log source verification (PROJ-6)
+LOG_SOURCE_CHECKS = ("intake", "configuration", "filtering", "responsibilities")
+
+
+class LogSourceProfile(Base):
+    """What a log source needs beyond its reference list entry: who is responsible and how
+    often it is verified. One row per log source, created on first use."""
+
+    __tablename__ = "log_source_profiles"
+
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("reference_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    owner: Mapped[str] = mapped_column(String(255), default="")
+    verification_interval_days: Mapped[int | None] = mapped_column(Integer)
+    last_verified_at: Mapped[date | None] = mapped_column(Date)
+    last_verified_by: Mapped[str | None] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class LogSourceVerification(Base):
+    """One check of a log source: intake, configuration, filtering and responsibilities, each
+    ok / issues / n/a with a note. Only a check without issues counts as verified."""
+
+    __tablename__ = "log_source_verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("reference_items.id", ondelete="CASCADE"), index=True
+    )
+    verified_at: Mapped[date] = mapped_column(Date)
+    username: Mapped[str] = mapped_column(String(64))
+    result: Mapped[VerificationResult] = mapped_column(
+        _enum(VerificationResult, "verification_result")
+    )
+    note: Mapped[str] = mapped_column(Text, default="")
+    # {check: {"result": "ok" | "issues" | "na", "note": str}} for LOG_SOURCE_CHECKS
+    checks: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 # ---------------------------------------------------------------- tasks (issue #74, PROJ-5)
 
 

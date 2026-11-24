@@ -413,6 +413,34 @@ export interface LifecycleState {
   allowed: Lifecycle[];
   events: LifecycleEvent[];
 }
+export type LogSourceState = "never" | "ok" | "due" | "overdue" | "issues";
+export type LogSourceCheck = "intake" | "configuration" | "filtering" | "responsibilities";
+export const LOG_SOURCE_CHECKS: LogSourceCheck[] = ["intake", "configuration", "filtering", "responsibilities"];
+export type CheckResult = "ok" | "issues" | "na";
+export interface LogSourceStatus {
+  id: number;
+  name: string;
+  description: string;
+  owner: string;
+  verification_interval_days: number | null;
+  interval: number;
+  last_verified_at: string | null;
+  last_verified_by: string | null;
+  due: string | null;
+  days_left: number | null;
+  status: LogSourceState;
+  issues_at: string | null;
+  rules: string[];
+  systems: string[];
+}
+export interface LogSourceVerification {
+  id: number;
+  verified_at: string;
+  username: string;
+  result: "ok" | "issues";
+  note: string;
+  checks: Record<LogSourceCheck, { result: CheckResult; note: string }>;
+}
 export type TaskKind = "review" | "tune" | "update_settings" | "other";
 export interface Task {
   id: number;
@@ -1243,6 +1271,19 @@ export const api = {
   l2: (code: string) => request<L2>("GET", `/api/l2/${enc(code)}`),
   createL2: (body: L2Input & { code: string; name: string }) => request<L2>("POST", "/api/l2", body),
   updateL2: (code: string, body: L2Input) => request<L2>("PATCH", `/api/l2/${enc(code)}`, body),
+  /** Log source verification (#75). */
+  logSourceStatuses: (withinDays = 30) =>
+    request<LogSourceStatus[]>("GET", `/api/log-sources/verification?within_days=${withinDays}`),
+  verifyLogSource: (
+    id: number,
+    body: { checks: Record<LogSourceCheck, { result: CheckResult; note: string }>; note: string; verified_at?: string },
+  ) => request<LogSourceVerification>("POST", `/api/log-sources/${id}/verify`, body),
+  logSourceHistory: (id: number) => request<LogSourceVerification[]>("GET", `/api/log-sources/${id}/verifications`),
+  logSourceProfile: (id: number, body: { owner: string; verification_interval_days: number | null }) =>
+    request<LogSourceStatus>("PUT", `/api/log-sources/${id}/profile`, body),
+  logSourceSettings: () => request<{ default_days: number }>("GET", "/api/log-sources/settings"),
+  putLogSourceSettings: (default_days: number) =>
+    request<{ default_days: number }>("PUT", "/api/log-sources/settings", { default_days }),
   /** Tasks on L2 use cases and L3 rules (#74). */
   tasks: (filter: { status?: "open" | "done" | "all"; assignee?: string; kind?: string; overdue?: boolean } = {}) =>
     request<Task[]>(

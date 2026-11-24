@@ -1322,3 +1322,20 @@ input, select, textarea, progress { accent-color: var(--c-accent); }
 .tasks-table td.cell-check { min-width: 0; width: 1%; padding-right: 0; }
 .tasks-table td:nth-child(2) { min-width: 220px; }
 .tasks-table tr.is-done .task-title { text-decoration: line-through; color: var(--c-muted); }
+
+/* Log source verification (issue #75) */
+.pill-bad { background: var(--c-poor-soft); color: var(--c-poor-ink); }
+.pill-muted { background: var(--c-subtle); color: var(--c-muted); }
+.chip.chip-warn { background: var(--c-poor-soft); color: var(--c-poor-ink); border-color: var(--c-poor); }
+.ls-checks { display: flex; flex-direction: column; gap: 10px; }
+.ls-check { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: var(--radius); }
+.ls-check .radio-row { margin: 0; }
+.ls-check .input { grid-column: 1 / -1; }
+.ls-check-title { font-weight: 600; }
+.ls-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ls-history li { border-top: 1px solid var(--c-border); padding-top: 10px; }
+.ls-history li:first-child { border-top: 0; padding-top: 0; }
+.ls-check-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ls-warning { margin: 0; }
+.modal form > .row-actions.ls-profile-actions { position: static; margin: 0; padding: 6px 0 0; border-top: 0; background: none; }
+.ls-history-head { margin: 8px 0 0; }

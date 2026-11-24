@@ -47,26 +47,40 @@ export function Chips({
   tone = "info",
   href,
   title,
+  warn,
 }: {
   items: string[];
   tone?: "info" | "neutral";
   href?: (item: string) => string;
   title?: (item: string) => string;
+  /** a warning text marks the chip (e.g. a log source whose check is overdue, issue #75) */
+  warn?: (item: string) => string | null;
 }) {
   if (!items.length) return <span className="muted">–</span>;
   return (
     <div className="chips">
-      {items.map((s) =>
-        href ? (
-          <Link key={s} to={href(s)} className={`chip chip-${tone} chip-link`} title={title?.(s)}>
+      {items.map((s) => {
+        const w = warn?.(s) ?? null;
+        const label = w ? (
+          <>
+            <span aria-hidden="true">⚠ </span>
             {s}
+            <span className="sr-only"> ({w})</span>
+          </>
+        ) : (
+          s
+        );
+        const tip = [w, title?.(s)].filter(Boolean).join(" · ") || undefined;
+        return href ? (
+          <Link key={s} to={href(s)} className={`chip chip-${tone} chip-link` + (w ? " chip-warn" : "")} title={tip}>
+            {label}
           </Link>
         ) : (
-          <span key={s} className={`chip chip-${tone}`}>
-            {s}
+          <span key={s} className={`chip chip-${tone}` + (w ? " chip-warn" : "")} title={tip}>
+            {label}
           </span>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
