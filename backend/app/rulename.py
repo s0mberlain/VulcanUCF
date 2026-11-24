@@ -8,12 +8,36 @@ frontend (lib/ruleName.ts) uses the same rules for its live preview.
 
 import re
 from collections.abc import Callable
+from typing import Annotated
 
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.orm import Session
 
-from app.models import L3UseCase
+from app.models import AppSetting, L3UseCase
 
 _VAR = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
+
+RULE_NAME = "rule_name"  # app_settings key
+BUILTINS = ("ucID", "ucName", "l2ID", "l1ID")
+DEFAULT_FORMAT = "$ucID:$ucName"
+VAR_NAME = r"^[A-Za-z_][A-Za-z0-9_]{0,49}$"
+
+
+class Variable(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, pattern=VAR_NAME)]
+    value: Annotated[str, StringConstraints(max_length=200)] = ""
+
+
+class RuleNameSettings(BaseModel):
+    format: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] = (
+        DEFAULT_FORMAT
+    )
+    variables: list[Variable] = Field(default_factory=list, max_length=50)
+
+
+def load(db: Session) -> tuple[RuleNameSettings, AppSetting | None]:
+    row = db.get(AppSetting, RULE_NAME)
+    return (RuleNameSettings.model_validate(row.value) if row else RuleNameSettings()), row
 
 
 def render(fmt: str, values: dict[str, str]) -> str:
@@ -21,8 +45,6 @@ def render(fmt: str, values: dict[str, str]) -> str:
 
 
 def formatter(db: Session) -> Callable[[L3UseCase], str]:
-    from app.api.app_settings import load
-
     settings, _ = load(db)
     variables = {v.name: v.value for v in settings.variables}
 

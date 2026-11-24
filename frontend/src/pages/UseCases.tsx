@@ -19,6 +19,7 @@ import { useAuth } from "../auth";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
+import { L2TestSummaryLine } from "../components/RuleTests";
 import {
   Chips,
   confirmDialog,
@@ -671,6 +672,7 @@ function L2Header({
             )}
           </span>
         </div>
+        <L2TestSummaryLine code={l2.code} />
         <DriverBlock business={l2.business_drivers} compliance={l2.compliance_drivers} drivers={drivers} />
         {(l2.systems ?? []).length > 0 && (
           <div className="driver-block">

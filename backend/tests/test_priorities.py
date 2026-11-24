@@ -1,8 +1,8 @@
-from app import growth
+from app import priorities
 
 
 def test_parse_risk_targets():
-    t = growth.parse_risk_targets("5=0.95, 3=bad, 9=0.1")
+    t = priorities.parse_risk_targets("5=0.95, 3=bad, 9=0.1")
     assert t[5] == 0.95 and t[3] == 0.6 and 9 not in t
 
 

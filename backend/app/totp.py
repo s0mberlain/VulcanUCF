@@ -100,3 +100,11 @@ def new_recovery_codes(n: int = 8) -> list[str]:
 
 def hash_code(code: str) -> str:
     return hashlib.sha256(code.strip().lower().replace(" ", "").encode()).hexdigest()
+
+
+def clear_totp(user) -> None:
+    """Turn two-factor login off for a user (own choice, admin reset or the recovery CLI)."""
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.totp_last_step = None
+    user.recovery_codes = []

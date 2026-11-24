@@ -5,8 +5,6 @@ import type { NavIconKey } from "./components/NavIcon";
 export interface NavItem {
   label: string;
   path: string;
-  /** Milestone from docs/PLAN.md in which the screen gets built. */
-  milestone?: string;
   /** Only these roles see the entry (default: everyone). */
   roles?: Role[];
   /** Heading the entry is listed under in the sidebar. */
@@ -30,6 +28,17 @@ export const NAV_ITEMS: NavItem[] = [
   { label: t("Use cases"), path: "/usecases", icon: "usecases", group: "work" },
   { label: t("Detection requests"), path: "/usecases/requests", icon: "requests", group: "work", parent: "/usecases" },
   { label: t("Verification"), path: "/verification", icon: "verification", group: "work" },
+  {
+    label: t("Campaigns"),
+    path: "/verification/campaigns",
+    icon: "campaigns",
+    group: "work",
+    parent: "/verification",
+    roles: ["admin", "analyst", "auditor", "red_team"],
+  },
+  { label: t("Quick tests"), path: "/verification/quick-tests", icon: "quick", group: "work", parent: "/verification" },
+  { label: t("Detection gaps"), path: "/verification/gaps", icon: "gaps", group: "work", parent: "/verification" },
+  { label: t("Test library"), path: "/verification/library", icon: "library", group: "work", parent: "/verification" },
   { label: t("Priorities"), path: "/priorities", icon: "priorities", group: "work" },
   { label: t("Threat modelling"), path: "/systems", icon: "threat", also: ["/interviews"], group: "work" },
   { label: t("ATT&CK coverage"), path: "/attack", icon: "attack", group: "analysis" },

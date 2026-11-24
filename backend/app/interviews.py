@@ -42,8 +42,8 @@ import hashlib
 from datetime import date
 from typing import Any
 
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import and_, delete, or_, select
+from sqlalchemy.orm import Session, defer, selectinload, undefer
 
 from app import attack
 from app.models import (
@@ -151,8 +151,24 @@ def states_of(db: Session, system_id: int) -> dict[str, DetectionRequestState]:
     }
 
 
-def state_view(db: Session, state: DetectionRequestState | None) -> dict:
-    """Status, reason, what implemented it and who changed it last, as the API shows it."""
+def existing_links(db: Session, states) -> tuple[set[int], set[int]]:
+    """(L2 ids, L3 ids) that still exist among the links of these request states, in two
+    queries; pass to state_view so a list of requests does not look each one up."""
+    l2 = {x.link_l2_id for x in states if x.link_l2_id is not None and x.link_l3_id is None}
+    l3 = {x.link_l3_id for x in states if x.link_l3_id is not None}
+    return (
+        set(db.scalars(select(L2UseCase.id).where(L2UseCase.id.in_(l2)))) if l2 else set(),
+        set(db.scalars(select(L3UseCase.id).where(L3UseCase.id.in_(l3)))) if l3 else set(),
+    )
+
+
+def state_view(
+    db: Session,
+    state: DetectionRequestState | None,
+    known: tuple[set[int], set[int]] | None = None,
+) -> dict:
+    """Status, reason, what implemented it and who changed it last, as the API shows it.
+    `known` = existing_links(...) for many states at once."""
     if state is None:
         return {
             "status": RequestStatus.open.value,
@@ -163,7 +179,13 @@ def state_view(db: Session, state: DetectionRequestState | None) -> dict:
         }
     link = None
     if state.link_l2_id is not None or state.link_l3_id is not None:
-        if state.link_l3_id is not None:
+        if known is not None:
+            exists = (
+                state.link_l3_id in known[1]
+                if state.link_l3_id is not None
+                else state.link_l2_id in known[0]
+            )
+        elif state.link_l3_id is not None:
             exists = db.get(L3UseCase, state.link_l3_id) is not None
         else:
             exists = db.get(L2UseCase, state.link_l2_id) is not None
@@ -186,7 +208,8 @@ def attach_status(db: Session, system_id: int, view: dict) -> dict:
     """Adds the current implementation status to the requests of an evaluated interview and
     to the requests of its risk rows. The status is read now, also for a completed interview."""
     states = states_of(db, system_id)
-    now = {k: state_view(db, x) for k, x in states.items()}
+    known = existing_links(db, states.values())
+    now = {k: state_view(db, x, known) for k, x in states.items()}
     open_view = state_view(db, None)
     view["requests"] = [r | now.get(r["key"], open_view) for r in view.get("requests", [])]
     for row in view.get("risks", []):
@@ -918,6 +941,24 @@ def completed(system: System) -> list[Interview]:
     return sorted(done, key=lambda i: (i.interview_date, i.id))
 
 
+def light_interviews():
+    """Loader option: a system's interviews without their notes and JSON (load_full adds them)."""
+    return selectinload(System.interviews).options(
+        defer(Interview.data), defer(Interview.result), defer(Interview.notes)
+    )
+
+
+def load_full(db: Session, interviews: list[Interview]) -> None:
+    """Load the deferred columns of these interviews with one query."""
+    ids = [i.id for i in interviews]
+    if ids:
+        db.scalars(
+            select(Interview)
+            .where(Interview.id.in_(ids))
+            .options(undefer(Interview.data), undefer(Interview.result), undefer(Interview.notes))
+        ).all()
+
+
 def latest_completed(system: System) -> Interview | None:
     done = completed(system)
     return done[-1] if done else None
@@ -1007,7 +1048,7 @@ class SystemRisks:
     """System risk levels from links of non-archived systems: an L2 link raises every rule of
     the L2, an L3 link only that rule. When several links apply, the highest level wins."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, rule: L3UseCase | None = None):
         self.l2: dict[int, tuple[int, str]] = {}
         self.l3: dict[int, tuple[int, str]] = {}
         q = (
@@ -1016,6 +1057,13 @@ class SystemRisks:
             .where(System.archived.is_(False))
             .order_by(System.name)
         )
+        if rule is not None:  # only the links that can apply to this rule
+            q = q.where(
+                or_(
+                    SystemLink.l3_id == rule.id,
+                    and_(SystemLink.l3_id.is_(None), SystemLink.l2_id == rule.l2_id),
+                )
+            )
         for l2_id, l3_id, score, name in db.execute(q):
             lvl = risk_level(score)
             target, key = (self.l3, l3_id) if l3_id else (self.l2, l2_id)
@@ -1028,16 +1076,20 @@ class SystemRisks:
         return max(options, key=lambda x: x[0]) if options else None
 
 
-def system_risks(db: Session) -> SystemRisks:
-    return SystemRisks(db)
+def system_risks(db: Session, rule: L3UseCase | None = None) -> SystemRisks:
+    return SystemRisks(db, rule)
 
 
 def log_source_users(db: Session) -> dict[int, list[str]]:
     """Log source id -> names of the systems whose draft or latest completed interview lists it
     on a component (issue #39: shown before a log source is deleted)."""
     out: dict[int, set[str]] = {}
-    q = select(System).options(selectinload(System.interviews))
-    for system in db.scalars(q):
+    systems = list(db.scalars(select(System).options(light_interviews())))
+    load_full(
+        db,
+        [x for s in systems for x in (draft_of(s), latest_completed(s)) if x is not None],
+    )
+    for system in systems:
         ids: set[int] = set()
         draft = draft_of(system)
         if draft is not None:

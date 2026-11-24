@@ -105,12 +105,14 @@ function Attention({
   requests,
   gaps,
   interviews,
+  testGaps,
   ready,
 }: {
   overdue: number | null;
   requests: number | null;
   gaps: number | null;
   interviews: number | null;
+  testGaps: number | null;
   ready: boolean;
 }) {
   const items = [
@@ -118,6 +120,7 @@ function Attention({
     { n: requests, label: t("open or in-progress detection requests"), to: "/usecases/requests", action: t("Show requests") },
     { n: gaps, label: t("gaps in systems"), to: "/systems", action: t("Show systems") },
     { n: interviews, label: t("interviews due"), to: "/systems?due=1", action: t("Show systems") },
+    { n: testGaps, label: t("detection gaps from tests"), to: "/verification/gaps", action: t("Show gaps") },
   ].filter((x) => x.n);
   return (
     <section className="card stack-sm attention" aria-labelledby="needh">
@@ -152,6 +155,7 @@ export default function Dashboard() {
   const interviewsDue = useLoad(() => api.systemsDue());
   const requests = useLoad<{ requests: OverviewRequest[] }>(() => api.detectionRequests());
   const systems = useLoad<SystemRow[]>(() => api.systems());
+  const testGaps = useLoad(() => api.testGapCount());
   const s = scores.data;
   const tiles = kpiTiles(s ? s.kpis : ({} as Kpis));
   const ready = due.data !== null && requests.data !== null && systems.data !== null && interviewsDue.data !== null;
@@ -189,6 +193,7 @@ export default function Dashboard() {
         }
         gaps={systems.data ? systems.data.reduce((a, x) => a + x.gaps, 0) : null}
         interviews={interviewsDue.data?.due ?? null}
+        testGaps={testGaps.data?.open ?? null}
       />
 
       <section className="stack-sm" aria-labelledby="kpih">

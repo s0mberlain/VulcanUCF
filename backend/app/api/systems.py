@@ -35,6 +35,7 @@ from app.models import (
     SystemLink,
     User,
 )
+from app.score_queries import compute_scores
 from app.security import Admin, Editor, Reader
 
 router = APIRouter(tags=["systems & interviews"])
@@ -354,8 +355,6 @@ def _ensure_name_free(db: Session, name: str, own_id: int | None = None) -> None
 
 
 def _weights(db: Session, settings) -> dict[str, float | None]:
-    from app.api.scores import compute_scores
-
     res, _l1, l2s, _l3 = compute_scores(db, settings.default_verification_days)
     out = {x.code: (res.l2[x.code].weight if x.code in res.l2 else None) for x in l2s}
     # L3 codes (XX-YYY-NN) never clash with L2 codes (XX-YYY)
@@ -366,7 +365,7 @@ def _weights(db: Session, settings) -> dict[str, float | None]:
 class _Ctx:
     """Things every system row needs, loaded once per request."""
 
-    def __init__(self, db: Session, settings):
+    def __init__(self, db: Session, settings, system_id: int | None = None):
         self.weights = _weights(db, settings)
         self.links: dict[int, list[SystemLink]] = {}
         q = select(SystemLink).options(
@@ -375,11 +374,15 @@ class _Ctx:
             .selectinload(L3UseCase.references),
             selectinload(SystemLink.l3).selectinload(L3UseCase.references),
         )
+        states = select(DetectionRequestState)
+        if system_id is not None:  # one system's page
+            q = q.where(SystemLink.system_id == system_id)
+            states = states.where(DetectionRequestState.system_id == system_id)
         for link in db.scalars(q):
             self.links.setdefault(link.system_id, []).append(link)
         # request status per system and request key (no row: open)
         self.states: dict[int, dict[str, DetectionRequestState]] = {}
-        for st in db.scalars(select(DetectionRequestState)):
+        for st in db.scalars(states):
             self.states.setdefault(st.system_id, {})[st.key] = st
 
     def unresolved(self, system_id: int, requests: list[dict]) -> list[dict]:
@@ -594,7 +597,16 @@ def _row(system: System, ctx: _Ctx) -> dict:
 
 
 def _system_query():
-    return select(System).options(selectinload(System.interviews)).order_by(System.name)
+    return select(System).order_by(System.name)
+
+
+def _systems(db: Session, q, results: bool = True) -> list[System]:
+    """Systems with their interviews, without the JSON of every interview: only the latest
+    completed one (the one lists and requests read) is loaded in full, when `results`."""
+    systems = list(db.scalars(q.options(iv.light_interviews())))
+    if results:
+        iv.load_full(db, [x for s in systems if (x := iv.latest_completed(s))])
+    return systems
 
 
 def _apply_system(system: System, body: SystemIn) -> dict:
@@ -780,7 +792,7 @@ def list_systems(
     due: bool = Query(False, description="Only systems without interview or with one due"),
 ) -> list[dict]:
     ctx = _Ctx(db, settings)
-    rows = [_row(s, ctx) for s in db.scalars(_system_query())]
+    rows = [_row(s, ctx) for s in _systems(db, _system_query())]
     if not archived:
         rows = [r for r in rows if not r["archived"]]
     if due:
@@ -788,11 +800,24 @@ def list_systems(
     return rows
 
 
+class SystemName(BaseModel):
+    id: int
+    name: str
+    archived: bool
+
+
+@router.get("/systems/names", response_model=list[SystemName])
+def system_names(_: Reader, db: DB) -> list[SystemName]:
+    """Id and name of every system, also archived ones (filters and pickers)."""
+    q = select(System.id, System.name, System.archived).order_by(System.name)
+    return [SystemName(id=i, name=n, archived=a) for i, n, a in db.execute(q)]
+
+
 @router.get("/systems/due-count")
 def due_count(_: Reader, db: DB) -> dict[str, int]:
     """Non-archived systems without completed interview or whose review interval has passed."""
     n = 0
-    for s in db.scalars(_system_query().where(System.archived.is_(False))):
+    for s in _systems(db, _system_query().where(System.archived.is_(False)), results=False):
         last = iv.latest_completed(s)
         if iv.interview_state(s, last.interview_date if last else None) != "ok":
             n += 1
@@ -812,7 +837,7 @@ def create_system(body: SystemIn, user: Editor, db: DB, settings: SettingsDep) -
 
 def _detail(db: Session, s: System, settings) -> dict:
     db.refresh(s)
-    ctx = _Ctx(db, settings)
+    ctx = _Ctx(db, settings, s.id)
     row = _row(s, ctx)
     links = ctx.links.get(s.id, [])
     no_rules, ls_gaps, requests = _gaps(s, links)
@@ -827,6 +852,7 @@ def _detail(db: Session, s: System, settings) -> dict:
         ]
     last = iv.latest_completed(s)
     comps = ((last.result or {}) if last else {}).get("components", [])
+    link_ok = iv.existing_links(db, known.values())
     return row | {
         "links": link_views,
         "risks": risks,
@@ -848,7 +874,7 @@ def _detail(db: Session, s: System, settings) -> dict:
         "gap_no_rules": no_rules,
         "gap_log_sources": ls_gaps,
         "gap_requests": [
-            r | iv.state_view(db, ctx.states.get(s.id, {}).get(r["key"])) for r in requests
+            r | iv.state_view(db, ctx.states.get(s.id, {}).get(r["key"]), link_ok) for r in requests
         ],
         "gap_risks": _uncovered(risks),
         "interviews": [
@@ -1198,10 +1224,12 @@ def list_detection_requests(_: Reader, db: DB) -> dict:
     status and the risk score of their threat. Drafts and older interviews do not count, so
     the numbers agree with the system page. The page filters and sorts."""
     states = {}
-    for st in db.scalars(select(DetectionRequestState)):
+    all_states = list(db.scalars(select(DetectionRequestState)))
+    for st in all_states:
         states.setdefault(st.system_id, {})[st.key] = st
+    known = iv.existing_links(db, all_states)
     rows = []
-    for system in db.scalars(_system_query()):
+    for system in _systems(db, _system_query()):
         last = iv.latest_completed(system)
         if last is None:
             continue
@@ -1224,7 +1252,7 @@ def list_detection_requests(_: Reader, db: DB) -> dict:
                     "category": r["category"],
                     "risk_score": score.get((r["component"], r["category"])),
                 }
-                | iv.state_view(db, states.get(system.id, {}).get(r["key"]))
+                | iv.state_view(db, states.get(system.id, {}).get(r["key"]), known)
             )
     return {"requests": rows}
 

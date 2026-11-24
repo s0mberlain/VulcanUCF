@@ -73,7 +73,7 @@ def parse_role_map(raw: str) -> dict[str, Role]:
         if "=" not in part:
             continue
         group, role = (x.strip() for x in part.rsplit("=", 1))
-        if group and role in Role.__members__:
+        if group and role in Role.__members__ and role != Role.red_team:
             out[group] = Role(role)
         elif group:
             log.warning("OIDC_ROLE_MAP: unknown role %r for group %r", role, group)
@@ -101,7 +101,7 @@ def map_role(claims: dict, settings: Settings) -> Role | None:
     if roles:
         return max(roles, key=ROLE_RANK.__getitem__)
     d = (settings.oidc_default_role or "").strip()
-    return Role(d) if d in Role.__members__ else None
+    return Role(d) if d in Role.__members__ and d != Role.red_team else None
 
 
 def discover(settings: Settings) -> dict:

@@ -3,14 +3,25 @@ import os
 # Startup refuses a missing or weak SECRET_KEY (app/config.py); tests use a fixed strong one.
 os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789-abcdefghijklmnop")
 
+import shutil
+
 import pytest
+from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
+from app import security
 from app.config import Settings
+from app.db import make_engine
 from app.main import create_app
+from app.startup import initialize
 
 ADMIN_PW = "admin-password-123"
+
+# Cheap password hashes: the suite signs in hundreds of times. Hashes still carry their own
+# parameters, so verification works the same way; production keeps the argon2 defaults.
+security._hasher = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1)
 
 
 # Run the suite against PostgreSQL with TEST_DATABASE_URL=postgresql+psycopg://user:pw@host/db.
@@ -34,16 +45,44 @@ def db_url(tmp_path) -> str:
     return f"sqlite:///{tmp_path}/test.db"
 
 
+@pytest.fixture(scope="session")
+def _sqlite_template(tmp_path_factory) -> str:
+    """One migrated and seeded SQLite file per test run; each test starts from a copy of it
+    instead of running all migrations and the catalogue seed again."""
+    path = tmp_path_factory.mktemp("template") / "template.db"
+    s = _settings(f"sqlite:///{path}", path.parent / "static")
+    engine = make_engine(s.database_url, s)
+    initialize(engine, sessionmaker(bind=engine, expire_on_commit=False), s)
+    with engine.connect() as conn:  # everything in the main file, nothing left in the WAL
+        conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+    engine.dispose()
+    return str(path)
+
+
 @pytest.fixture
-def settings(tmp_path, db_url) -> Settings:
+def app_db_url(request, tmp_path) -> str:
+    """The database the app fixtures use: a copy of the template on SQLite."""
+    if PG_URL:
+        return request.getfixturevalue("db_url")
+    target = tmp_path / "app.db"
+    shutil.copyfile(request.getfixturevalue("_sqlite_template"), target)
+    return f"sqlite:///{target}"
+
+
+def _settings(url: str, static_dir) -> Settings:
     return Settings(
-        database_url=db_url,
-        static_dir=tmp_path / "static",
+        database_url=url,
+        static_dir=static_dir,
         admin_user="admin",
         admin_password=ADMIN_PW,
         snapshot_schedule="off",
         allow_demo_data=True,
     )
+
+
+@pytest.fixture
+def settings(tmp_path, app_db_url) -> Settings:
+    return _settings(app_db_url, tmp_path / "static")
 
 
 @pytest.fixture

@@ -50,3 +50,18 @@ def test_no_path_traversal(tmp_path):
     (tmp_path / "secret.txt").write_text("secret")
     r = make_client(tmp_path, True).get("/..%2Fsecret.txt")
     assert "secret" not in r.text
+
+
+def test_built_assets_are_cached_and_the_page_is_revalidated(tmp_path):
+    client = make_client(tmp_path, True)
+    assert "immutable" in client.get("/assets/app.js").headers["cache-control"]
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert client.get("/usecases").headers["cache-control"] == "no-cache"
+
+
+def test_large_answers_are_compressed(admin):
+    r = admin.get("/api/l3", headers={"Accept-Encoding": "gzip"})
+    assert r.status_code == 200 and r.headers.get("content-encoding") == "gzip"
+    assert "cache-control" not in r.headers or "immutable" not in r.headers["cache-control"]
+    small = admin.get("/api/health", headers={"Accept-Encoding": "gzip"})
+    assert "content-encoding" not in small.headers

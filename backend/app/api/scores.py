@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 
 from app import audit, configs
 from app.api.deps import DB, SettingsDep
-from app.models import L1UseCase, L2UseCase, L3UseCase, Verification, VerificationResult
+from app.models import L2UseCase, L3UseCase, Verification, VerificationResult
 from app.schemas import NOTE_MAX, not_in_future
-from app.scoring import SCORED_STATES, L1Input, L2Input, Result, RuleInput, compute
+from app.score_queries import compute_scores, open_issues
+from app.scoring import SCORED_STATES
 from app.security import Editor, Reader
 
 router = APIRouter(tags=["scores & verification"])
@@ -95,50 +96,7 @@ class VerificationOut(BaseModel):
     result: VerificationResult
     note: str
     config_tag: str | None = None
-
-
-def open_issues(db: Session, level: str = "l3") -> dict[int, date]:
-    """Use case id -> date of its latest verification, where that one found issues."""
-    col = Verification.l3_id if level == "l3" else Verification.l2_id
-    latest: dict[int, Verification] = {}
-    q = (
-        select(Verification)
-        .where(col.is_not(None))
-        .order_by(Verification.verified_at, Verification.id)
-    )
-    for v in db.scalars(q):
-        latest[getattr(v, f"{level}_id")] = v
-    return {k: v.verified_at for k, v in latest.items() if v.result == VerificationResult.issues}
-
-
-def compute_scores(
-    db: Session, default_interval: int, today: date | None = None
-) -> tuple[Result, list, list, list]:
-    l1s = list(db.scalars(select(L1UseCase).order_by(L1UseCase.sort_order)))
-    l2s = list(db.scalars(select(L2UseCase).order_by(L2UseCase.code)))
-    l3s = list(db.scalars(select(L3UseCase).order_by(L3UseCase.code)))
-    l1_code = {x.id: x.code for x in l1s}
-    l2_code = {x.id: x.code for x in l2s}
-    res = compute(
-        [L1Input(x.code, x.applicable) for x in l1s],
-        [L2Input(x.code, l1_code[x.l1_id]) for x in l2s],
-        [
-            RuleInput(
-                x.code,
-                l2_code[x.l2_id],
-                x.lifecycle_status,
-                x.effectiveness,
-                x.implementation,
-                x.coverage,
-                x.last_verified_at,
-                x.verification_interval_days,
-            )
-            for x in l3s
-        ],
-        today or date.today(),
-        default_interval,
-    )
-    return res, l1s, l2s, l3s
+    test_id: int | None = None
 
 
 @router.get("/scores", response_model=ScoresOut)

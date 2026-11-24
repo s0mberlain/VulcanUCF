@@ -1,4 +1,4 @@
-from app.api.output import months_back
+from app.dates import months_back
 
 
 def test_put_validate_and_list(admin, make_user):

@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # Verification interval used when a rule has no own interval.
     default_verification_days: int = 180
 
-    # Target implementation per risk level when a use case sets no own target (app/growth.py).
+    # Target implementation per risk level when a use case sets no own target (app/priorities.py).
     risk_targets: str = "1=0.4,2=0.5,3=0.6,4=0.75,5=0.9"
 
     # A business or compliance driver whose linked use cases score below this average weight is
@@ -119,7 +119,7 @@ class Settings(BaseSettings):
 
     @property
     def risk_target_map(self) -> dict[int, float]:
-        from app.growth import parse_risk_targets
+        from app.priorities import parse_risk_targets
 
         return parse_risk_targets(self.risk_targets)
 

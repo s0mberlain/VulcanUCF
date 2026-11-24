@@ -5,9 +5,10 @@
  * a text missing there falls back to English. Placeholders: `t("{n} rules", { n: 3 })`.
  * Changing the language reloads the page, so plain `t()` calls are enough everywhere (also in
  * module-level label maps) and no hook or context is needed.
+ *
+ * Only the dictionary of the current language is downloaded: main.tsx awaits loadLanguage()
+ * before it imports the app, so module-level `t()` calls already see it.
  */
-import de from "./locales/de.json";
-import nl from "./locales/nl.json";
 
 export type Lang = "en" | "de" | "nl";
 
@@ -17,8 +18,13 @@ export const LANGUAGES: { code: Lang; label: string }[] = [
   { code: "nl", label: "Nederlands" },
 ];
 
-const DICTS: Record<Lang, Record<string, string>> = { en: {}, de, nl };
 // Check that every text is translated: npm run i18n:check
+const LOADERS: Record<Lang, () => Promise<Record<string, string>>> = {
+  en: async () => ({}),
+  de: () => import("./locales/de.json").then((m) => m.default),
+  nl: () => import("./locales/nl.json").then((m) => m.default),
+};
+let dict: Record<string, string> = {};
 const STORAGE_KEY = "magma.lang";
 
 function isLang(v: unknown): v is Lang {
@@ -60,8 +66,17 @@ export function setLang(lang: string | null | undefined): boolean {
   return true;
 }
 
+/** Load the current language's texts; English (the keys) when that fails. */
+export async function loadLanguage(): Promise<void> {
+  try {
+    dict = await LOADERS[current]();
+  } catch {
+    dict = {};
+  }
+}
+
 export function t(text: string, vars?: Record<string, string | number | null | undefined>): string {
-  let out = DICTS[current][text] ?? text;
+  let out = dict[text] ?? text;
   if (vars) out = out.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k] ?? "") : m));
   return out;
 }

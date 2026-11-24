@@ -9,6 +9,7 @@ const ROLE_TEXT = {
   admin: "Admin: manages users and everything else.",
   analyst: "Analyst: edits use cases, rules, configs and verifications.",
   auditor: "Auditor: reads everything, changes nothing.",
+  red_team: "Red team: runs the tests of the campaigns it is assigned to.",
 };
 
 export default function Account() {

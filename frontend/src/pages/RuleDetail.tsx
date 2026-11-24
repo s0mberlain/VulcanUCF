@@ -22,6 +22,7 @@ import {
 import { fmtDate, num, pct, refHref } from "../lib/format";
 import { renderRuleName, ruleNameValues } from "../lib/ruleName";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
+import { RuleTestsSection } from "../components/RuleTests";
 import { t } from "../i18n";
 
 type Metric = "effectiveness" | "implementation" | "coverage";
@@ -439,6 +440,11 @@ export default function RuleDetail() {
                         {fmtDate(v.verified_at)} · {v.username}
                       </span>
                       {v.note && <span className="ink-2">{v.note}</span>}
+                      {v.test_id && (
+                        <Link to={`/verification/tests/${v.test_id}`} className="small">
+                          {t("from test")}
+                        </Link>
+                      )}
                     </span>
                   </li>
                 ))}
@@ -456,6 +462,8 @@ export default function RuleDetail() {
           </div>
 
           <div className="split-wide stack-lg">
+            <RuleTestsSection code={code} onChanged={() => void history.reload()} />
+
             <section className="card stack" aria-labelledby="dh">
               <h2 id="dh">{t("Details")}</h2>
               <div className="form-grid">

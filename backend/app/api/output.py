@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from app import audit
 from app.api.deps import DB, SettingsDep
+from app.dates import months_back
 from app.models import L3UseCase, OutputMetric
 from app.security import Editor, Reader
 
@@ -38,15 +39,6 @@ def parse_period(s: str) -> date:
     if not m or not 1 <= int(m.group(2)) <= 12:
         raise ValueError(f"period '{s}' is not YYYY-MM")
     return date(int(m.group(1)), int(m.group(2)), 1)
-
-
-def months_back(n: int, today: date | None = None) -> list[date]:
-    t = (today or date.today()).replace(day=1)
-    out = []
-    for k in range(n - 1, -1, -1):
-        y, m = divmod(t.year * 12 + t.month - 1 - k, 12)
-        out.append(date(y, m + 1, 1))
-    return out
 
 
 class MetricIn(BaseModel):
@@ -415,6 +407,100 @@ async def import_csv(
         )
         db.commit()
     return rep
+
+
+class MetricCounts(BaseModel):
+    alerts: int
+    incidents: int
+    false_positives: int
+
+
+class IncidentChange(BaseModel):
+    code: str
+    name: str
+    period: str
+    before: MetricCounts | None
+    after: MetricCounts
+    changed: bool
+
+
+class IgnoredName(BaseModel):
+    name: str
+    count: int
+
+
+class IncidentReport(BaseModel):
+    dry_run: bool
+    rows: int
+    matched_rows: int
+    new_incidents: int
+    updated_incidents: int
+    unchanged_incidents: int
+    duplicate_rows: int
+    ignored_rows: int
+    ignored: list[IgnoredName]
+    problems: list[str]
+    changes: list[IncidentChange]
+    created: int
+    updated: int
+    unchanged: int
+
+
+@router.post("/import/output-metrics/incidents", response_model=IncidentReport)
+async def import_incidents(
+    user: Editor,
+    db: DB,
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+) -> IncidentReport:
+    """Incident export of Microsoft Sentinel / Defender XDR (one row per incident). Incidents
+    are matched to L3 rules by name; unmatched ones are ignored. See app/incidents.py."""
+    from app import incidents
+
+    raw = await file.read(20_000_001)
+    if len(raw) > 20_000_000:
+        raise HTTPException(413, "File is larger than 20 MB")
+    text = raw.decode("utf-8-sig", errors="replace")
+    try:
+        rep = incidents.apply(db, text, user.username)
+    except incidents.FormatError as e:
+        db.rollback()
+        raise HTTPException(422, str(e)) from None
+    if dry_run:
+        db.rollback()
+    else:
+        audit.record(
+            db,
+            user,
+            "import_incidents",
+            "l3",
+            "csv",
+            {
+                "file": file.filename,
+                "matched": rep.matched_rows,
+                "ignored": rep.ignored_rows,
+                "new_incidents": rep.new_incidents,
+                "months_created": rep.created,
+                "months_updated": rep.updated,
+            },
+        )
+        db.commit()
+    return IncidentReport(
+        dry_run=dry_run,
+        rows=rep.rows,
+        matched_rows=rep.matched_rows,
+        new_incidents=rep.new_incidents,
+        updated_incidents=rep.updated_incidents,
+        unchanged_incidents=rep.unchanged_incidents,
+        duplicate_rows=rep.duplicate_rows,
+        ignored_rows=rep.ignored_rows,
+        ignored=[IgnoredName(**i) for i in rep.ignored],
+        problems=rep.problems[:50],
+        changes=[IncidentChange(**vars(c)) for c in rep.changes],
+        created=rep.created,
+        updated=rep.updated,
+        unchanged=rep.unchanged,
+    )
 
 
 @router.get("/report.pdf")

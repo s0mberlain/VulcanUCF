@@ -12,15 +12,24 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   const [loading, setLoading] = useState(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const load = useCallback(fn, deps);
+  // only the latest call may set the result: an older, slower answer (deps changed meanwhile)
+  // must not overwrite a newer one
+  const latest = useRef(0);
   const reload = useCallback(() => {
+    const n = ++latest.current;
     setLoading(true);
     return load()
       .then((d) => {
+        if (n !== latest.current) return;
         setData(d);
         setError(null);
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e: Error) => {
+        if (n === latest.current) setError(e.message);
+      })
+      .finally(() => {
+        if (n === latest.current) setLoading(false);
+      });
   }, [load]);
   useEffect(() => {
     void reload();

@@ -87,6 +87,11 @@ class UserOut(ORM):
     locale: str | None = None
     last_login_at: datetime | None
     created_at: datetime
+    # red team accounts (PROJ-3): the date set by hand, whether it follows the campaigns, and the
+    # date that applies now
+    expires_at: datetime | None = None
+    expiry_follows_campaign: bool = False
+    effective_expires_at: datetime | None = None
 
 
 class UserCreate(BaseModel):
@@ -95,6 +100,8 @@ class UserCreate(BaseModel):
     email: EmailStr | None = None
     role: Role
     password: Password
+    expires_at: datetime | None = None
+    expiry_follows_campaign: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -103,6 +110,8 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     active: bool | None = None
     password: Password | None = None
+    expires_at: datetime | None = None
+    expiry_follows_campaign: bool | None = None
 
 
 class PasswordChange(BaseModel):

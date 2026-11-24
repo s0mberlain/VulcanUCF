@@ -1,6 +1,8 @@
 # MaGMa Use Case Framework Webapp: Implementation Plan
 
-Status: **draft v2 for review** (no code written yet). v2 adds your decisions from 13.11.2026: local login + SSO, the roles admin / analyst / auditor, more than one data source per rule, new scoring without the Excel quirks, onboarded / last verified dates, and generated random test data.
+> **Historical document.** This is the original plan from November 2026; milestones M0 to M7 are built. Some parts were changed or removed later (the maturity self-assessment, YAML configurations, L2 configurations); the README and the code are the current reference, and later features are specified in `features/`. Code comments still point to its sections.
+
+Status at the time: **draft v2 for review** (no code written yet). v2 adds your decisions from 13.11.2026: local login + SSO, the roles admin / analyst / auditor, more than one data source per rule, new scoring without the Excel quirks, onboarded / last verified dates, and generated random test data.
 Target repo: https://github.com/s0mberlain/MagmaGUI (currently only an initial README)
 Sources analysed:
 - FI-ISAC "MaGMa: a framework and tool for use case management" (short version, PDF)

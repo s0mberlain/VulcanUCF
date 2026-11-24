@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import audit, drivers, growth, lifecycle, rulename
+from app import audit, drivers, lifecycle, priorities, rulename
 from app.api.deps import DB, SettingsDep
 from app.interviews import SystemRisks, system_risks
 from app.models import (
@@ -39,6 +39,7 @@ from app.schemas import (
     L3Update,
     LinkedSystem,
 )
+from app.score_queries import open_issues
 from app.scoring import RuleInput, score_rule
 from app.security import Admin, Editor, Reader, as_utc
 
@@ -159,12 +160,6 @@ def _status_change(db: Session, obj, old: Lifecycle | None, user: User) -> None:
     lifecycle.record_change(db, obj, old, new, user.username, override=bool(missing))
 
 
-def _issues(db: Session) -> dict[int, date]:
-    from app.api.scores import open_issues
-
-    return open_issues(db)
-
-
 # ---------------------------------------------------------------- serializers
 
 
@@ -215,9 +210,9 @@ def l3_out(
         date.today(),
         default_interval,
     )
-    eff = growth.effective(
+    eff = priorities.effective(
         l3,
-        targets or growth.DEFAULT_RISK_TARGETS,
+        targets or priorities.DEFAULT_RISK_TARGETS,
         score.potential,
         system_risks.for_rule(l3) if system_risks else None,
     )
@@ -512,6 +507,18 @@ def _set_l3_refs(db: Session, l3: L3UseCase, data: dict[str, Any]) -> dict[str, 
     return changes
 
 
+def _l3_response(db: Session, settings, l3: L3UseCase) -> L3Out:
+    """One rule as the API shows it; the context is read for this rule only."""
+    return l3_out(
+        l3,
+        settings.default_verification_days,
+        settings.risk_target_map,
+        open_issues(db, ids=[l3.id]),
+        system_risks(db, l3),
+        rulename.formatter(db),
+    )
+
+
 @router.get("/l3", response_model=list[L3Out])
 def list_l3(
     _: Reader,
@@ -533,7 +540,7 @@ def list_l3(
     if status_:
         q = q.where(L3UseCase.lifecycle_status == status_)
     targets = settings.risk_target_map
-    issues = _issues(db)
+    issues = open_issues(db)
     risks = system_risks(db)
     name = rulename.formatter(db)
     return [
@@ -544,15 +551,7 @@ def list_l3(
 
 @router.get("/l3/{code}", response_model=L3Out)
 def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
-    l3 = _by_code(db, L3UseCase, code, "L3 rule")
-    return l3_out(
-        l3,
-        settings.default_verification_days,
-        settings.risk_target_map,
-        _issues(db),
-        system_risks(db),
-        rulename.formatter(db),
-    )
+    return _l3_response(db, settings, _by_code(db, L3UseCase, code, "L3 rule"))
 
 
 @router.post("/l3", response_model=L3Out, status_code=201)
@@ -573,14 +572,7 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
     _status_change(db, l3, None, user)
     audit.record(db, user, "create", "l3", l3.code, body.model_dump())
     db.commit()
-    return l3_out(
-        l3,
-        settings.default_verification_days,
-        settings.risk_target_map,
-        _issues(db),
-        system_risks(db),
-        rulename.formatter(db),
-    )
+    return _l3_response(db, settings, l3)
 
 
 @router.patch("/l3/{code}", response_model=L3Out)
@@ -593,14 +585,7 @@ def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: Setting
     _status_change(db, l3, old, user)
     audit.record(db, user, "update", "l3", code, changes)
     db.commit()
-    return l3_out(
-        l3,
-        settings.default_verification_days,
-        settings.risk_target_map,
-        _issues(db),
-        system_risks(db),
-        rulename.formatter(db),
-    )
+    return _l3_response(db, settings, l3)
 
 
 @router.delete("/l3/{code}", status_code=204)

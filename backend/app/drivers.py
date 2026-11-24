@@ -22,6 +22,7 @@ from app.models import (
     L3UseCase,
 )
 from app.schemas import ComplianceRef, DriverCoverage, DriverCoverageOut, SourceCoverage
+from app.score_queries import compute_scores
 
 # Each linked driver raises the priority of the L2's rules by 10 %, at most by 50 %.
 BOOST_PER_DRIVER = 0.1
@@ -53,8 +54,6 @@ def _avg(values: list[float]) -> float | None:
 
 
 def coverage(db: Session, default_interval: int, low_threshold: float) -> DriverCoverageOut:
-    from app.api.scores import compute_scores
-
     res, _l1s, _l2s, _l3s = compute_scores(db, default_interval)
     l2s = list(
         db.scalars(

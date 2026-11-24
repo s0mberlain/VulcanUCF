@@ -17,6 +17,10 @@ const PATHS: Record<string, string> = {
   audit: "M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4.2-4.2M8.5 11h5M11 8.5v5",
   users: "M9 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M17 4.5a3 3 0 010 6M18 14.3c2.3.5 3.5 2.4 3.5 5.7",
   settings: "M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4h2V5zM9 15v4h2v-4z",
+  campaigns: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 8a4 4 0 100 8 4 4 0 000-8zM12 11.5v1",
+  quick: "M13 2L4 14h7l-1 8 9-12h-7l1-8z",
+  gaps: "M12 4l9 16H3L12 4zM12 10v4M12 17h.01",
+  library: "M4 5h16v4H4zM4 11h16v4H4zM4 17h16v3H4z",
   signout: "M10 4H5v16h5M15 8l4 4-4 4M19 12H9",
 };
 

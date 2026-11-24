@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { api } from "../api";
+import { api, changeCount } from "../api";
 import { ROLE_LABEL, useAuth } from "../auth";
+import { isOverdue } from "../lib/verification";
 import { NAV_GROUPS, NAV_ITEMS, type NavItem } from "../nav";
 import LanguageSelect from "./LanguageSelect";
 import Logo from "./Logo";
@@ -26,6 +27,8 @@ function belongs(item: NavItem, path: string): boolean {
   if (item.path === "/") return path === "/";
   return [item.path, ...(item.also ?? [])].some((p) => path === p || path.startsWith(p + "/"));
 }
+
+const COUNTS_MAX_AGE = 5 * 60 * 1000;
 
 export default function Layout() {
   const { user, logout, can } = useAuth();
@@ -58,24 +61,31 @@ export default function Layout() {
     const label = hit ? hit.label : path.startsWith("/account") ? t("Account") : "";
     document.title = label ? `${label} · ${t("Vulcan UCF")}` : t("Vulcan UCF");
   }, [path]);
-  const visible = NAV_ITEMS.filter((item) => !item.roles || can(...item.roles));
+  // red team accounts see only the entries that name their role; everyone else the rest
+  const visible = NAV_ITEMS.filter((item) =>
+    user?.role === "red_team" ? !!item.roles?.includes("red_team") : !item.roles || can(...item.roles),
+  );
   // open work shown next to the entries that lead to it
   const [counts, setCounts] = useState({ requests: 0, overdue: 0 });
+  // reloaded after a change was saved, or when they are older than five minutes
+  const countsFrom = useRef<{ user: string; changes: number; at: number } | null>(null);
   useEffect(() => {
-    if (!user) return;
-    let live = true;
+    if (!user || user.role === "red_team") return;
+    const last = countsFrom.current;
+    if (last && last.user === user.username && last.changes === changeCount() && Date.now() - last.at < COUNTS_MAX_AGE) return;
+    const from = { user: user.username, changes: changeCount(), at: Date.now() };
+    countsFrom.current = from;
     Promise.all([api.detectionRequests(), api.due(30)])
       .then(([r, d]) => {
-        if (!live) return;
+        if (countsFrom.current !== from) return; // a newer load is on its way
         setCounts({
           requests: r.requests.filter((x) => !x.archived && (x.status === "open" || x.status === "in_progress")).length,
-          overdue: d.filter((x) => !x.due || x.overdue).length,
+          overdue: d.filter(isOverdue).length,
         });
       })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
+      .catch(() => {
+        if (countsFrom.current === from) countsFrom.current = null; // try again on the next page
+      });
   }, [user?.username, path]);
   const countOf = (item: NavItem): { n: number; text: string } | null => {
     const n = item.path === "/usecases/requests" ? counts.requests : item.path === "/verification" ? counts.overdue : 0;
@@ -84,7 +94,7 @@ export default function Layout() {
   };
   // entries with sub-entries open and close; the one with the current page is open
   const [opened, setOpened] = useState<Set<string>>(new Set());
-  const isOpen = (item: NavItem) => opened.has(item.path) || visible.some((c) => c.parent === item.path && belongs(c, path));
+  const isOpen = (item: NavItem) => opened.has(item.path) || (belongs(item, path) && visible.some((c) => c.parent === item.path)) || visible.some((c) => c.parent === item.path && belongs(c, path));
   const expand = (p: string) => setOpened((x) => (x.has(p) ? x : new Set(x).add(p)));
   const toggle = (p: string) =>
     setOpened((x) => {
@@ -125,7 +135,7 @@ export default function Layout() {
       <div key={g.key} className={"nav-group" + (g.key === "manage" ? " nav-group-manage" : "")} role="group" aria-label={g.label}>
         <span className="nav-group-head">{g.label}</span>
         {items
-          .filter((item) => !item.parent)
+          .filter((item) => !item.parent || !items.some((p) => p.path === item.parent))
           .map((item) => {
             const subs = items.filter((c) => c.parent === item.path);
             const expanded = isOpen(item);
@@ -250,7 +260,9 @@ export default function Layout() {
         </div>
       </nav>
       <main id="main" tabIndex={-1} className="content">
-        <Outlet />
+        <Suspense fallback={<p className="muted">{t("Loading…")}</p>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

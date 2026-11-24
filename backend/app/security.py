@@ -106,6 +106,23 @@ def token_allows(scopes: list[str], method: str, path: str) -> bool:
     return "read" in scopes and method in ("GET", "HEAD")
 
 
+# What a red team account may call: its own account and the campaigns it is assigned to (PROJ-3).
+_RED_TEAM_PATH = re.compile(r"^/api/(auth/|campaigns|tests|test-attachments)")
+
+
+def _gate(user: User, request: Request, db: Session) -> User:
+    """Red team accounts: refuse everything but their campaigns, and refuse expired accounts."""
+    if user.role != Role.red_team:
+        return user
+    from app import purple  # late: purple imports this module
+
+    if purple.account_expired(user, db):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account has expired")
+    if not _RED_TEAM_PATH.match(request.url.path):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Your role does not allow this action")
+    return user
+
+
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
     auth = request.headers.get("authorization", "")
     if auth[:7].lower() == "bearer ":
@@ -117,12 +134,12 @@ def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> U
                 + (", ".join(scopes) or "none")
                 + ")",
             )
-        return user
+        return _gate(user, request, db)
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         sess = db.scalar(select(UserSession).where(UserSession.token_hash == _token_hash(token)))
         if sess and as_utc(sess.expires_at) > datetime.now(UTC) and sess.user.active:
-            return sess.user
+            return _gate(sess.user, request, db)
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
 
 

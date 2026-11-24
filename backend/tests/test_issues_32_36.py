@@ -96,9 +96,9 @@ def test_refused_files(analyst, name, data):
 
 
 def test_too_large(analyst, monkeypatch):
-    from app.api import evidence
+    from app import files
 
-    monkeypatch.setattr(evidence, "MAX_FILE", 100)
+    monkeypatch.setattr(files, "MAX_FILE", 100)
     iv = start(analyst, new_system(analyst)["id"])
     upload(analyst, iv["id"], "big.pdf", PDF + b"x" * 200, expect=413)
 

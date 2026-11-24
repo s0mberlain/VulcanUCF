@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,11 +25,13 @@ from app.api import (
     configs,
     evidence,
     gitsync_api,
-    growth,
     integrations,
     lifecycle,
     oidc,
     output,
+    priorities,
+    purple,
+    rounds,
     scores,
     snapshots,
     systems,
@@ -132,6 +135,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None,
         lifespan=lifespan,
     )
+    # JSON lists and the built bundle shrink 4 to 13 times; small answers are sent as they are
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(
         SecurityHeaders,
         hsts=settings.cookie_secure,
@@ -204,13 +209,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         snapshots.router,
         gitsync_api.router,
         gitsync_api.hook,
-        growth.router,
+        priorities.router,
         attack_api.router,
         output.router,
         integrations.router,
         app_settings.router,
         systems.router,
         evidence.router,
+        purple.router,
+        rounds.router,
     ):
         api.include_router(r)
     app.include_router(api)

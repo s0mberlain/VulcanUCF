@@ -925,3 +925,13 @@ def test_reinterview_on_the_same_day(analyst):
     assert codes(analyst.get(f"/api/systems/{s['id']}").json()["links"]) == ["AO-ACC"]
     cmp_ = analyst.get(f"/api/interviews/{done['id']}/compare").json()
     assert "AO-CRE" in codes(cmp_["use_cases_removed"])
+
+
+def test_system_names_list_archived_ones_too(admin):
+    a = new_system(admin, name="Alpha")
+    new_system(admin, name="Beta")
+    body = {k: a[k] for k in ("name", "owner_name", "criticality")} | {"archived": True}
+    assert admin.patch(f"/api/systems/{a['id']}", json=body).status_code == 200
+    names = admin.get("/api/systems/names").json()
+    assert [n["name"] for n in names] == ["Alpha", "Beta"]
+    assert names[0]["archived"] is True and names[1]["archived"] is False
