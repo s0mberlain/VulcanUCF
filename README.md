@@ -37,8 +37,9 @@ configuration and operations.
 | Area | What you get |
 |---|---|
 | **Use case catalogue** | The MaGMa L1 / L2 / L3 hierarchy with effectiveness, implementation and coverage per rule, weights, potential, SOC detection score and catalogue coverage; reference lists (threat actors, log sources, detection technologies, scopes) with usage links |
-| **Rules** | Free-form JSON configuration per rule with git-like history (diff, restore, tags), SIEM name template, ATT&CK techniques, SIEM rule IDs, lifecycle with definition of done |
-| **Verification** | Re-verification interval per rule, *Verify now*, overdue list on the dashboard |
+| **Rules** | Free-form JSON configuration per rule with git-like history (diff, restore, tags), SIEM name template, ATT&CK techniques, SIEM rule IDs, lifecycle with definition of done; bulk edit of L2 use cases from the tree |
+| **Verification** | Re-verification interval per rule, *Verify now*, overdue list on the dashboard; log source checks (intake, configuration, filtering, responsibilities) with owner and interval, flagged on the rules that use the log source |
+| **Tasks** | Review, tuning and settings tasks on use cases and rules with Markdown text, due date and assignee; central task list |
 | **Priorities** | Risk level and target implementation per use case; rules sorted by gap to target × risk × driver boost |
 | **Drivers** | Business and compliance drivers linked to L2 use cases, driver coverage and gaps |
 | **Threat modelling** | Systems with their business owner, STRIDE interviews per component, risk / coverage matrix, detection requests, evidence and owner sign-off |
@@ -131,6 +132,9 @@ risk, drivers, ATT&CK technique, system …). Admins and analysts create, edit a
 - **Verification**: operational rules must be re-verified every `DEFAULT_VERIFICATION_DAYS` (180)
   days unless the rule sets its own interval. Never verified counts as overdue. *Verify now* on
   the rule page records a verification; a successful purple team test does the same.
+- **Log source verification** (*Verification → Log sources*): each log source is checked for log
+  intake, configuration, filtering and responsibilities, by default every 180 days (admin setting,
+  per log source override). Overdue or failed log sources are flagged on the rules that use them.
 
 **Reference lists** (*Setup → Reference lists*) hold the threat actors (assigned to L2), log
 sources, detection technologies and scopes (assigned to L3). Each entry shows where it is used,
