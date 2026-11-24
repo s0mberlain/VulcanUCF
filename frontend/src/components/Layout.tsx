@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { api } from "../api";
+import { api, changeCount } from "../api";
 import { ROLE_LABEL, useAuth } from "../auth";
 import { isOverdue } from "../lib/verification";
 import { NAV_GROUPS, NAV_ITEMS, type NavItem } from "../nav";
@@ -27,6 +27,8 @@ function belongs(item: NavItem, path: string): boolean {
   if (item.path === "/") return path === "/";
   return [item.path, ...(item.also ?? [])].some((p) => path === p || path.startsWith(p + "/"));
 }
+
+const COUNTS_MAX_AGE = 5 * 60 * 1000;
 
 export default function Layout() {
   const { user, logout, can } = useAuth();
@@ -65,21 +67,25 @@ export default function Layout() {
   );
   // open work shown next to the entries that lead to it
   const [counts, setCounts] = useState({ requests: 0, overdue: 0 });
+  // reloaded after a change was saved, or when they are older than five minutes
+  const countsFrom = useRef<{ user: string; changes: number; at: number } | null>(null);
   useEffect(() => {
     if (!user || user.role === "red_team") return;
-    let live = true;
+    const last = countsFrom.current;
+    if (last && last.user === user.username && last.changes === changeCount() && Date.now() - last.at < COUNTS_MAX_AGE) return;
+    const from = { user: user.username, changes: changeCount(), at: Date.now() };
+    countsFrom.current = from;
     Promise.all([api.detectionRequests(), api.due(30)])
       .then(([r, d]) => {
-        if (!live) return;
+        if (countsFrom.current !== from) return; // a newer load is on its way
         setCounts({
           requests: r.requests.filter((x) => !x.archived && (x.status === "open" || x.status === "in_progress")).length,
           overdue: d.filter(isOverdue).length,
         });
       })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
+      .catch(() => {
+        if (countsFrom.current === from) countsFrom.current = null; // try again on the next page
+      });
   }, [user?.username, path]);
   const countOf = (item: NavItem): { n: number; text: string } | null => {
     const n = item.path === "/usecases/requests" ? counts.requests : item.path === "/verification" ? counts.overdue : 0;
@@ -254,7 +260,9 @@ export default function Layout() {
         </div>
       </nav>
       <main id="main" tabIndex={-1} className="content">
-        <Outlet />
+        <Suspense fallback={<p className="muted">{t("Loading…")}</p>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

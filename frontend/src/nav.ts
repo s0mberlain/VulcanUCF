@@ -5,8 +5,6 @@ import type { NavIconKey } from "./components/NavIcon";
 export interface NavItem {
   label: string;
   path: string;
-  /** Milestone from docs/PLAN.md in which the screen gets built. */
-  milestone?: string;
   /** Only these roles see the entry (default: everyone). */
   roles?: Role[];
   /** Heading the entry is listed under in the sidebar. */

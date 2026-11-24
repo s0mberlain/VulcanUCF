@@ -21,20 +21,6 @@ export interface User {
   effective_expires_at?: string | null;
 }
 
-export interface VersionInfo {
-  name: string;
-  version: string;
-}
-
-export interface CatalogueSummary {
-  l1: number;
-  l2: number;
-  l3: number;
-  business_drivers: number;
-  compliance_drivers: number;
-  references: Record<string, number>;
-}
-
 export interface AuditEntry {
   id: number;
   at: string;
@@ -1094,7 +1080,15 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
+// Counts the changes this tab sent; screens that summarise data (the sidebar's counts) reload
+// when it moved instead of on every navigation.
+let changes = 0;
+export function changeCount(): number {
+  return changes;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (method !== "GET") changes++;
   const res = await fetch(path, {
     method,
     credentials: "same-origin",
@@ -1129,7 +1123,6 @@ function detailMessage(data: unknown): string | null {
 }
 
 export const api = {
-  version: () => request<VersionInfo>("GET", "/api/version"),
   login: (username: string, password: string, otp?: string) =>
     request<User>("POST", "/api/auth/login", { username, password, ...(otp ? { otp } : {}) }),
   logout: () => request<void>("POST", "/api/auth/logout"),
@@ -1148,7 +1141,6 @@ export const api = {
   setLocale: (locale: Lang | null) => request<User>("PUT", "/api/auth/me/locale", { locale }),
   changePassword: (current_password: string, new_password: string) =>
     request<void>("POST", "/api/auth/me/password", { current_password, new_password }),
-  summary: () => request<CatalogueSummary>("GET", "/api/catalogue/summary"),
   users: () => request<User[]>("GET", "/api/users"),
   createUser: (u: {
     username: string;
@@ -1240,8 +1232,6 @@ export const api = {
   saveConfig: (level: Level, code: string, body: { content: string; message: string; base_sha: string | null }) =>
     request<ConfigCommit>("PUT", cfgUrl(level, code), body),
   configHistory: (level: Level, code: string) => request<ConfigCommit[]>("GET", `${cfgUrl(level, code)}/history`),
-  configCommit: (level: Level, code: string, ref: string) =>
-    request<ConfigCommit & { content: string }>("GET", `${cfgUrl(level, code)}/commits/${enc(ref)}`),
   configDiff: (level: Level, code: string, to: string, from?: string) =>
     request<ConfigDiff>("GET", `${cfgUrl(level, code)}/diff?${new URLSearchParams({ to, ...(from ? { from } : {}) })}`),
   restoreConfig: (level: Level, code: string, ref: string, message = "") =>
@@ -1260,6 +1250,7 @@ export const api = {
     fd.append("file", file);
     fd.append("mode", mode);
     fd.append("dry_run", String(dryRun));
+    changes++;
     const res = await fetch("/api/import/excel", { method: "POST", body: fd, credentials: "same-origin" });
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
@@ -1396,17 +1387,8 @@ export const api = {
     request<TestProposals>("POST", `/api/campaigns/${id}/proposals`, b),
   redTeamAccounts: () => request<CampaignAccount[]>("GET", "/api/red-team-accounts"),
   addTest: (campaignId: number, b: TestInput) => request<TestCaseOut>("POST", `/api/campaigns/${campaignId}/tests`, b),
-  test: (id: number) => request<TestCaseOut>("GET", `/api/tests/${id}`),
   updateTest: (id: number, b: TestInput) => request<TestCaseOut>("PUT", `/api/tests/${id}`, b),
   deleteTest: (id: number) => request<void>("DELETE", `/api/tests/${id}`),
-  recordRed: (
-    id: number,
-    b: { exec_status: TestStatus; executed_at: string | null; red_notes: string; expected_version: number },
-  ) => request<TestCaseOut>("PUT", `/api/tests/${id}/red`, b),
-  recordBlue: (
-    id: number,
-    b: { outcome: TestOutcome | null; detected_at: string | null; blue_notes: string; expected_version: number },
-  ) => request<TestCaseOut>("PUT", `/api/tests/${id}/blue`, b),
   testDetail: (id: number) => request<TestDetail>("GET", `/api/tests/${id}`),
   testEvents: (id: number, before: number) =>
     request<TestEvent[]>("GET", `/api/tests/${id}/events?before=${before}`),

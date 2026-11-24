@@ -1,38 +1,39 @@
 import { Route, Routes } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
 import Layout from "./components/Layout";
-import AttackPage from "./pages/AttackPage";
-import AuditLog from "./pages/AuditLog";
-import Dashboard from "./pages/Dashboard";
-import DetectionRequests from "./pages/DetectionRequests";
-import Drivers from "./pages/Drivers";
-import Account from "./pages/Account";
-import History from "./pages/History";
-import Priorities from "./pages/Priorities";
-import ImportExport from "./pages/ImportExport";
-import Login from "./pages/Login";
-import Integrations from "./pages/Integrations";
-import OutputPage from "./pages/OutputPage";
-import Placeholder from "./pages/Placeholder";
-import References from "./pages/References";
-import RuleDetail from "./pages/RuleDetail";
-import UseCases from "./pages/UseCases";
-import Users from "./pages/Users";
-import Settings from "./pages/Settings";
-import Systems from "./pages/Systems";
-import SystemDetail from "./pages/SystemDetail";
-import Interview from "./pages/Interview";
-import StrideMappingPage from "./pages/StrideMappingPage";
-import Verification from "./pages/Verification";
-import { NAV_ITEMS } from "./nav";
-import Campaigns from "./pages/Campaigns";
-import CampaignDetail from "./pages/CampaignDetail";
-import Gaps from "./pages/Gaps";
-import QuickTests from "./pages/QuickTests";
-import TestLibrary from "./pages/TestLibrary";
-import TestDetail from "./pages/TestDetail";
-import { t } from "./i18n";
 import { ConfirmHost } from "./components/ui";
+import { lazyPage } from "./lazyPage";
+import Dashboard from "./pages/Dashboard";
+import Login from "./pages/Login";
+import NotFound from "./pages/NotFound";
+
+// Every other screen is its own file, loaded when it is first opened.
+const Account = lazyPage(() => import("./pages/Account"));
+const AttackPage = lazyPage(() => import("./pages/AttackPage"));
+const AuditLog = lazyPage(() => import("./pages/AuditLog"));
+const CampaignDetail = lazyPage(() => import("./pages/CampaignDetail"));
+const Campaigns = lazyPage(() => import("./pages/Campaigns"));
+const DetectionRequests = lazyPage(() => import("./pages/DetectionRequests"));
+const Drivers = lazyPage(() => import("./pages/Drivers"));
+const Gaps = lazyPage(() => import("./pages/Gaps"));
+const History = lazyPage(() => import("./pages/History"));
+const ImportExport = lazyPage(() => import("./pages/ImportExport"));
+const Integrations = lazyPage(() => import("./pages/Integrations"));
+const Interview = lazyPage(() => import("./pages/Interview"));
+const OutputPage = lazyPage(() => import("./pages/OutputPage"));
+const Priorities = lazyPage(() => import("./pages/Priorities"));
+const QuickTests = lazyPage(() => import("./pages/QuickTests"));
+const References = lazyPage(() => import("./pages/References"));
+const RuleDetail = lazyPage(() => import("./pages/RuleDetail"));
+const Settings = lazyPage(() => import("./pages/Settings"));
+const StrideMappingPage = lazyPage(() => import("./pages/StrideMappingPage"));
+const SystemDetail = lazyPage(() => import("./pages/SystemDetail"));
+const Systems = lazyPage(() => import("./pages/Systems"));
+const TestDetail = lazyPage(() => import("./pages/TestDetail"));
+const TestLibrary = lazyPage(() => import("./pages/TestLibrary"));
+const UseCases = lazyPage(() => import("./pages/UseCases"));
+const Users = lazyPage(() => import("./pages/Users"));
+const Verification = lazyPage(() => import("./pages/Verification"));
 
 export default function App() {
   return (
@@ -95,14 +96,7 @@ export default function App() {
               </RequireAuth>
             }
           />
-          {NAV_ITEMS.filter((n) => n.milestone).map((n) => (
-            <Route
-              key={n.path}
-              path={n.path.slice(1)}
-              element={<Placeholder title={n.label} milestone={n.milestone} />}
-            />
-          ))}
-          <Route path="*" element={<Placeholder title={t("Page not found")} />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </AuthProvider>

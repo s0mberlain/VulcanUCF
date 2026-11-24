@@ -36,12 +36,6 @@ export function today(): string {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-export function daysSince(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const ms = Date.now() - new Date(iso + "T00:00:00").getTime();
-  return Math.floor(ms / 86400000);
-}
-
 export const STATUS_LABEL: Record<Lifecycle, string> = {
   onboarding: t("Onboarding"),
   operational: t("Operational"),
