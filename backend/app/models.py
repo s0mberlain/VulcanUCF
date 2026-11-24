@@ -466,6 +466,30 @@ class OutputMetric(Base):
     )
 
 
+class ImportedIncident(Base):
+    """An incident from a SIEM case export (Microsoft Sentinel / Defender XDR) counted in the
+    output metrics of a rule. The incident id is the key: importing the same or an overlapping
+    export again replaces the incident instead of counting it twice."""
+
+    __tablename__ = "imported_incidents"
+    __table_args__ = (UniqueConstraint("incident_id", "l3_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String(64), index=True)
+    l3_id: Mapped[int] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    period: Mapped[date] = mapped_column(Date)  # first day of the month the incident was created
+    verdict: Mapped[str] = mapped_column(
+        String(16)
+    )  # true_positive | false_positive | benign | unknown
+    title: Mapped[str] = mapped_column(String(300), default="")
+    imported_by: Mapped[str] = mapped_column(String(64))
+    imported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 # ---------------------------------------------------------------- integrations (M7)
 
 

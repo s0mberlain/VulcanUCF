@@ -223,6 +223,18 @@ false_positives, false_negatives, note`; period `YYYY-MM`; comma or semicolon se
 and a file with any error imports nothing). The page shows monthly totals and the rules with the most false
 positives.
 
+**Import incident export** on the same page takes the incident list exported from Microsoft Sentinel or Defender
+XDR (one row per incident; columns `Name`, `Incident ID`, `Created on`, `Classification` are used, the others are
+ignored). Each incident is matched to a rule by its name: the whole name is the rule's code, a SIEM rule ID or its
+SIEM name; or a part of the name (`ACME:IA-LNX-01:Password Spray`) is the code or a SIEM rule ID; or the name starts
+with the rule's SIEM name. Incidents that match no rule are ignored and listed in the preview. Per rule and month
+(of `Created on`, UTC): alerts = matched incidents, incidents = classified true positive, false positives =
+classified false positive; benign positives and unclassified incidents count as alerts only. False negatives and
+notes stay as they are. The incident ID is the key: importing the same or an overlapping export again recounts
+the month instead of adding twice, and later classifications correct earlier numbers. A month that was entered by
+hand is replaced by the recount (the preview shows before and after). Imported incidents are not part of the JSON
+backup.
+
 **Download PDF report** on the dashboard creates a management report: KPIs, the SOC score trend, detection per
 L1, top priorities, ATT&CK coverage per tactic, the noisiest rules and overdue verifications.
 

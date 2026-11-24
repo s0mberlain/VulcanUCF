@@ -651,6 +651,27 @@ export interface OutputSummary {
   rules_reporting: number;
   totals: OutputTotal;
 }
+export interface MetricCounts {
+  alerts: number;
+  incidents: number;
+  false_positives: number;
+}
+export interface IncidentReport {
+  dry_run: boolean;
+  rows: number;
+  matched_rows: number;
+  new_incidents: number;
+  updated_incidents: number;
+  unchanged_incidents: number;
+  duplicate_rows: number;
+  ignored_rows: number;
+  ignored: { name: string; count: number }[];
+  problems: string[];
+  changes: { code: string; name: string; period: string; before: MetricCounts | null; after: MetricCounts; changed: boolean }[];
+  created: number;
+  updated: number;
+  unchanged: number;
+}
 export interface CsvReport {
   dry_run: boolean;
   rows: number;
@@ -1314,6 +1335,16 @@ export const api = {
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
     return data as CsvReport;
+  },
+
+  importIncidents: async (file: File, dryRun: boolean): Promise<IncidentReport> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("dry_run", String(dryRun));
+    const res = await fetch("/api/import/output-metrics/incidents", { method: "POST", body: fd, credentials: "same-origin" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
+    return data as IncidentReport;
   },
 
   systems: (f: { archived?: boolean; due?: boolean } = {}) =>

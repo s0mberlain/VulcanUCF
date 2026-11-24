@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type CsvReport, type OutputSummary } from "../api";
 import { useAuth } from "../auth";
+import IncidentImportCard from "../components/IncidentImport";
 import OutputChart, { OutputLegend, fmtCount } from "../components/OutputChart";
 import { ErrorNote, useLoad } from "../components/ui";
 import { pct } from "../lib/format";
@@ -137,6 +138,7 @@ export default function OutputPage() {
           )}
         </section>
         <div className="split-side stack-lg">
+          {can("admin", "analyst") && <IncidentImportCard onImported={() => void sum.reload()} />}
           <CsvCard editor={can("admin", "analyst")} onImported={() => void sum.reload()} />
         </div>
       </div>
