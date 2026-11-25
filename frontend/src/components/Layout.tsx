@@ -66,7 +66,7 @@ export default function Layout() {
     user?.role === "red_team" ? !!item.roles?.includes("red_team") : !item.roles || can(...item.roles),
   );
   // open work shown next to the entries that lead to it
-  const [counts, setCounts] = useState({ requests: 0, overdue: 0 });
+  const [counts, setCounts] = useState({ requests: 0, overdue: 0, tasks: 0 });
   // reloaded after a change was saved, or when they are older than five minutes
   const countsFrom = useRef<{ user: string; changes: number; at: number } | null>(null);
   useEffect(() => {
@@ -75,12 +75,13 @@ export default function Layout() {
     if (last && last.user === user.username && last.changes === changeCount() && Date.now() - last.at < COUNTS_MAX_AGE) return;
     const from = { user: user.username, changes: changeCount(), at: Date.now() };
     countsFrom.current = from;
-    Promise.all([api.detectionRequests(), api.due(30)])
-      .then(([r, d]) => {
+    Promise.all([api.detectionRequests(), api.due(30), api.tasks({ assignee: user.username })])
+      .then(([r, d, tk]) => {
         if (countsFrom.current !== from) return; // a newer load is on its way
         setCounts({
           requests: r.requests.filter((x) => !x.archived && (x.status === "open" || x.status === "in_progress")).length,
           overdue: d.filter(isOverdue).length,
+          tasks: tk.length,
         });
       })
       .catch(() => {
@@ -88,9 +89,22 @@ export default function Layout() {
       });
   }, [user?.username, path]);
   const countOf = (item: NavItem): { n: number; text: string } | null => {
-    const n = item.path === "/usecases/requests" ? counts.requests : item.path === "/verification" ? counts.overdue : 0;
+    const n =
+      item.path === "/usecases/requests"
+        ? counts.requests
+        : item.path === "/verification"
+          ? counts.overdue
+          : item.path === "/tasks"
+            ? counts.tasks
+            : 0;
     if (!n) return null;
-    return { n, text: item.path === "/verification" ? t("{n} overdue", { n }) : t("{n} open", { n }) };
+    const text =
+      item.path === "/verification"
+        ? t("{n} overdue", { n })
+        : item.path === "/tasks"
+          ? t("{n} assigned to you", { n })
+          : t("{n} open", { n });
+    return { n, text };
   };
   // entries with sub-entries open and close; the one with the current page is open
   const [opened, setOpened] = useState<Set<string>>(new Set());

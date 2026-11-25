@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useBlocker } from "react-router-dom";
 import { isLeavingSession, type Lifecycle } from "../api";
@@ -47,26 +47,40 @@ export function Chips({
   tone = "info",
   href,
   title,
+  warn,
 }: {
   items: string[];
   tone?: "info" | "neutral";
   href?: (item: string) => string;
   title?: (item: string) => string;
+  /** a warning text marks the chip (e.g. a log source whose check is overdue, issue #75) */
+  warn?: (item: string) => string | null;
 }) {
   if (!items.length) return <span className="muted">–</span>;
   return (
     <div className="chips">
-      {items.map((s) =>
-        href ? (
-          <Link key={s} to={href(s)} className={`chip chip-${tone} chip-link`} title={title?.(s)}>
+      {items.map((s) => {
+        const w = warn?.(s) ?? null;
+        const label = w ? (
+          <>
+            <span aria-hidden="true">⚠ </span>
             {s}
+            <span className="sr-only"> ({w})</span>
+          </>
+        ) : (
+          s
+        );
+        const tip = [w, title?.(s)].filter(Boolean).join(" · ") || undefined;
+        return href ? (
+          <Link key={s} to={href(s)} className={`chip chip-${tone} chip-link` + (w ? " chip-warn" : "")} title={tip}>
+            {label}
           </Link>
         ) : (
-          <span key={s} className={`chip chip-${tone}`}>
-            {s}
+          <span key={s} className={`chip chip-${tone}` + (w ? " chip-warn" : "")} title={tip}>
+            {label}
           </span>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -164,6 +178,95 @@ export function Modal({
   );
 }
 
+type PickOption = { value: string; label: string; group?: string };
+
+/** Shared behaviour of the dropdown pickers (issue #76): the search box is always there, gets the
+ * focus when the list opens, and typing on the closed field opens the list and starts the search.
+ * Escape clears the search first, then closes; a click outside closes. */
+function usePicker() {
+  const box = useRef<HTMLDetailsElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const [find, setFind] = useState("");
+  const [open, setOpen] = useState(false);
+  const close = useCallback((focusSummary = false) => {
+    const d = box.current;
+    if (!d) return;
+    d.open = false;
+    if (focusSummary) d.querySelector("summary")?.focus();
+  }, []);
+  useEffect(() => {
+    const d = box.current;
+    if (!d) return;
+    const onToggle = () => {
+      setOpen(d.open);
+      if (d.open) requestAnimationFrame(() => search.current?.focus());
+      else setFind("");
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !d.open) return;
+      e.stopPropagation();
+      e.preventDefault();
+      if (search.current?.value) setFind("");
+      else close(true);
+    };
+    const onDown = (e: MouseEvent) => {
+      if (d.open && !d.contains(e.target as Node)) d.open = false;
+    };
+    d.addEventListener("toggle", onToggle);
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      d.removeEventListener("toggle", onToggle);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [close]);
+  /** On the closed summary: a printable key opens the list and becomes the first search letter. */
+  const onSummaryKey = (e: ReactKeyboardEvent) => {
+    const d = box.current;
+    if (!d || d.open) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      d.open = true;
+    } else if (e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      setFind(e.key);
+      d.open = true;
+    }
+  };
+  /** In the search box: arrow down moves to the first entry of the list. */
+  const onSearchKey = (e: ReactKeyboardEvent<HTMLInputElement>, onEnter: () => void) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      box.current?.querySelector<HTMLElement>(".picker-item")?.focus();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      onEnter();
+    }
+  };
+  /** Arrow keys between the entries; arrow up from the first goes back to the search. */
+  const onListKey = (e: ReactKeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const items = [...(box.current?.querySelectorAll<HTMLElement>(".picker-item") ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = e.key === "ArrowDown" ? items[i + 1] : items[i - 1];
+    (next ?? (e.key === "ArrowUp" ? search.current : null))?.focus();
+  };
+  return { box, search, find, setFind, open, close, onSummaryKey, onSearchKey, onListKey };
+}
+
+function filterOptions(options: PickOption[], find: string): PickOption[] {
+  const q = find.trim().toLowerCase();
+  if (!q) return options;
+  return options.filter((o) => o.label.toLowerCase().includes(q) || (o.group ?? "").toLowerCase().includes(q));
+}
+
+function groupsOf(options: PickOption[]): string[] {
+  return [...new Set(options.map((o) => o.group ?? ""))];
+}
+
 /** Checkbox list in a disclosure, for picking several entries from a reference list. */
 export function MultiSelect({
   label,
@@ -178,7 +281,7 @@ export function MultiSelect({
   /** one line under the field that answers "what is this for?" */
   hint?: string;
   /** options with a `group` are listed under that heading (in the order the groups appear) */
-  options: { value: string; label: string; group?: string }[];
+  options: PickOption[];
   value: string[];
   onChange: (v: string[]) => void;
   disabled?: boolean;
@@ -187,52 +290,29 @@ export function MultiSelect({
   onCreate?: (name: string) => Promise<string>;
 }) {
   const id = useId();
+  const p = usePicker();
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
   const chosen = options.filter((o) => value.includes(o.value));
-  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [find, setFind] = useState("");
-  const box = useRef<HTMLDetailsElement>(null);
-  // Escape or a click outside closes the list; Escape returns to the summary
-  useEffect(() => {
-    const d = box.current;
-    if (!d) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && d.open) {
-        d.open = false;
-        d.querySelector("summary")?.focus();
-        e.stopPropagation();
-      }
-    };
-    const onDown = (e: MouseEvent) => {
-      if (d.open && !d.contains(e.target as Node)) d.open = false;
-    };
-    document.addEventListener("keydown", onKey, true);
-    document.addEventListener("mousedown", onDown);
-    return () => {
-      document.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("mousedown", onDown);
-    };
-  }, []);
-  const shown = find.trim() ? options.filter((o) => o.label.toLowerCase().includes(find.trim().toLowerCase())) : options;
+  const shown = filterOptions(options, p.find);
+  const typed = p.find.trim();
+  const exact = options.find((o) => o.label.toLowerCase() === typed.toLowerCase() || o.value.toLowerCase() === typed.toLowerCase());
 
-  async function create() {
-    const name = draft.trim();
+  async function create(name: string) {
     if (!name || !onCreate || busy) return;
     setError(null);
     // an entry with that name exists already: just select it
-    const existing = options.find((o) => o.value.toLowerCase() === name.toLowerCase());
-    if (existing) {
-      if (!value.includes(existing.value)) onChange([...value, existing.value]);
-      setDraft("");
+    if (exact) {
+      if (!value.includes(exact.value)) onChange([...value, exact.value]);
+      p.setFind("");
       return;
     }
     setBusy(true);
     try {
       const created = await onCreate(name);
       onChange([...value, created]);
-      setDraft("");
+      p.setFind("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -240,11 +320,23 @@ export function MultiSelect({
     }
   }
 
+  /** Enter in the search: toggles the only hit, or creates the typed entry when nothing matches. */
+  const onEnter = () => {
+    if (shown.length === 1) {
+      toggle(shown[0].value);
+      p.setFind("");
+    } else if (!shown.length && typed && onCreate) void create(typed);
+  };
+
   return (
     <div className="field">
       <span id={id}>{label}</span>
-      <details className="multi" ref={box}>
-        <summary className={"input multi-summary" + (disabled ? " is-disabled" : "")} aria-labelledby={id}>
+      <details className="multi" ref={p.box}>
+        <summary
+          className={"input multi-summary" + (disabled ? " is-disabled" : "")}
+          aria-labelledby={id}
+          onKeyDown={disabled ? undefined : p.onSummaryKey}
+        >
           {chosen.length ? (
             <span className="chips">
               {chosen.map((o) => (
@@ -257,64 +349,140 @@ export function MultiSelect({
             <span className="muted">{t("None")}</span>
           )}
         </summary>
-        {!disabled && (
-          <fieldset className="multi-list" aria-labelledby={id}>
-            {options.length > 8 && (
-              <input
-                className="input input-sm"
-                type="search"
-                value={find}
-                placeholder={t("Search…")}
-                aria-label={t("Search in {list}", { list: label })}
-                onChange={(e) => setFind(e.target.value)}
-              />
-            )}
-            {[...new Set(shown.map((o) => o.group ?? ""))].map((g) => (
+        {!disabled && p.open && (
+          <fieldset className="multi-list" aria-labelledby={id} onKeyDown={p.onListKey}>
+            <input
+              ref={p.search}
+              className="input input-sm picker-search"
+              type="search"
+              value={p.find}
+              placeholder={onCreate ? t("Search or add…") : t("Search…")}
+              aria-label={t("Search in {list}", { list: label })}
+              onChange={(e) => p.setFind(e.target.value)}
+              onKeyDown={(e) => p.onSearchKey(e, onEnter)}
+            />
+            {groupsOf(shown).map((g) => (
               <div key={g} className="multi-group" role="group" aria-label={g || undefined}>
                 {g && <span className="multi-group-head">{g}</span>}
                 {shown
                   .filter((o) => (o.group ?? "") === g)
                   .map((o) => (
                     <label key={o.value}>
-                      <input type="checkbox" checked={value.includes(o.value)} onChange={() => toggle(o.value)} />
+                      <input
+                        type="checkbox"
+                        className="picker-item"
+                        checked={value.includes(o.value)}
+                        onChange={() => toggle(o.value)}
+                      />
                       {o.label}
                     </label>
                   ))}
               </div>
             ))}
-            {!options.length && <span className="muted">{t("The reference list is empty.")}</span>}
-            {onCreate && (
+            {!options.length && !onCreate && <span className="muted picker-empty">{t("The reference list is empty.")}</span>}
+            {!!options.length && !shown.length && !onCreate && (
+              <span className="muted picker-empty">{t("No match")}</span>
+            )}
+            {onCreate && typed && !exact && (
               <div className="multi-add">
-                <input
-                  className="input input-sm grow"
-                  value={draft}
-                  maxLength={200}
-                  placeholder={t("New entry…")}
-                  aria-label={t("New entry for {list}", { list: label })}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    // Enter adds the entry instead of submitting the surrounding form
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void create();
-                    }
-                  }}
-                />
-                <button type="button" className="btn btn-sm" disabled={!draft.trim() || busy} onClick={() => void create()}>
-                  {t("Add")}
+                <button type="button" className="btn btn-sm picker-item" disabled={busy} onClick={() => void create(typed)}>
+                  {t("Add “{name}”", { name: typed })}
                 </button>
-                {error && (
-                  <span className="form-error small" role="alert">
-                    {error}
-                  </span>
-                )}
               </div>
+            )}
+            {error && (
+              <span className="form-error small" role="alert">
+                {error}
+              </span>
             )}
           </fieldset>
         )}
       </details>
       {hint && <span className="small muted">{hint}</span>}
     </div>
+  );
+}
+
+/** One value from a list, with the same search as MultiSelect (issue #76: filters on the use case
+ * page). The empty value is the "all" entry, labelled by `allLabel`. */
+export function SelectSearch({
+  label,
+  options,
+  value,
+  onChange,
+  allLabel,
+  className,
+}: {
+  /** accessible name; the field shows the chosen entry or `allLabel` */
+  label: string;
+  options: PickOption[];
+  value: string;
+  onChange: (v: string) => void;
+  allLabel: string;
+  className?: string;
+}) {
+  const p = usePicker();
+  const shown = filterOptions(options, p.find);
+  const chosen = options.find((o) => o.value === value);
+  const pick = (v: string) => {
+    onChange(v);
+    p.close(true);
+  };
+  return (
+    <details className={"multi select-search" + (className ? " " + className : "")} ref={p.box}>
+      <summary
+        className={"input input-sm multi-summary" + (value ? " has-value" : "")}
+        aria-label={`${label}: ${chosen?.label ?? allLabel}`}
+        onKeyDown={p.onSummaryKey}
+      >
+        <span className="select-search-value">{chosen?.label ?? allLabel}</span>
+      </summary>
+      {p.open && (
+        <div className="multi-list" role="listbox" aria-label={label} onKeyDown={p.onListKey}>
+          <input
+            ref={p.search}
+            className="input input-sm picker-search"
+            type="search"
+            value={p.find}
+            placeholder={t("Search…")}
+            aria-label={t("Search in {list}", { list: label })}
+            onChange={(e) => p.setFind(e.target.value)}
+            onKeyDown={(e) => p.onSearchKey(e, () => shown.length === 1 && pick(shown[0].value))}
+          />
+          {!p.find.trim() && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              className={"picker-item picker-option" + (!value ? " active" : "")}
+              onClick={() => pick("")}
+            >
+              {allLabel}
+            </button>
+          )}
+          {groupsOf(shown).map((g) => (
+            <div key={g} className="multi-group" role="group" aria-label={g || undefined}>
+              {g && <span className="multi-group-head">{g}</span>}
+              {shown
+                .filter((o) => (o.group ?? "") === g)
+                .map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    role="option"
+                    aria-selected={o.value === value}
+                    className={"picker-item picker-option" + (o.value === value ? " active" : "")}
+                    onClick={() => pick(o.value)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+            </div>
+          ))}
+          {!shown.length && <span className="muted picker-empty">{t("No match")}</span>}
+        </div>
+      )}
+    </details>
   );
 }
 

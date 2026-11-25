@@ -39,6 +39,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: t("Quick tests"), path: "/verification/quick-tests", icon: "quick", group: "work", parent: "/verification" },
   { label: t("Detection gaps"), path: "/verification/gaps", icon: "gaps", group: "work", parent: "/verification" },
   { label: t("Test library"), path: "/verification/library", icon: "library", group: "work", parent: "/verification" },
+  { label: t("Log sources"), path: "/verification/log-sources", icon: "logsources", group: "work", parent: "/verification" },
+  { label: t("Tasks"), path: "/tasks", icon: "tasks", group: "work" },
   { label: t("Priorities"), path: "/priorities", icon: "priorities", group: "work" },
   { label: t("Threat modelling"), path: "/systems", icon: "threat", also: ["/interviews"], group: "work" },
   { label: t("ATT&CK coverage"), path: "/attack", icon: "attack", group: "analysis" },

@@ -20,6 +20,9 @@ import { Markdown, MarkdownField } from "../components/Markdown";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { L2TestSummaryLine } from "../components/RuleTests";
+import { TasksPanel } from "../components/Tasks";
+import { loadLogSourceMap, logSourceWarning } from "../lib/logSources";
+import { BulkBar, BulkDialog, type BulkAction } from "../components/BulkEdit";
 import {
   Chips,
   confirmDialog,
@@ -27,6 +30,7 @@ import {
   GapBadge,
   Modal,
   MultiSelect,
+  SelectSearch,
   ShowMore,
   StatusPill,
   useLoad,
@@ -98,6 +102,19 @@ export default function UseCases() {
   const [dialog, setDialog] = useState<null | "editL2" | "newL2" | "newL3" | "verifyL2" | "newL1">(null);
   const [editL1, setEditL1] = useState<L1 | null>(null);
   const [driversOf, setDriversOf] = useState<L2 | null>(null);
+  // multi edit in the tree (issue #73)
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<BulkAction | null>(null);
+  const togglePick = (codes: string[], on: boolean) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      for (const c of codes) {
+        if (on) n.add(c);
+        else n.delete(c);
+      }
+      return n;
+    });
 
   const cat = useLoad<Catalogue>(async () => {
     const [l1s, l2s, scores, drivers, sources, systems, mapping] = await Promise.all([
@@ -285,78 +302,41 @@ export default function UseCases() {
             {[filter.bd, filter.src, filter.cd, filter.sys].filter(Boolean).length > 0 ? ` (${[filter.bd, filter.src, filter.cd, filter.sys].filter(Boolean).length})` : ""}
           </summary>
           <div className="uc-filter-fields">
-        <label className="sr-only" htmlFor="f-bd">
-          {t("Business driver")}
-        </label>
-        <select
-          id="f-bd"
-          className="input input-sm"
-          value={filter.bd}
-          onChange={(e) => setParam({ bd: e.target.value || null, l2: null })}
-        >
-          <option value="">{t("All business drivers")}</option>
-          {cat.data?.drivers.map((d) => (
-            <option key={d.id} value={d.code}>
-              {d.code} · {d.name}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="f-src">
-          {t("Compliance source")}
-        </label>
-        <select
-          id="f-src"
-          className="input input-sm"
-          value={filter.src}
-          onChange={(e) => setParam({ src: e.target.value || null, cd: null, l2: null })}
-        >
-          <option value="">{t("All compliance sources")}</option>
-          {cat.data?.sources.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="f-cd">
-          {t("Compliance driver")}
-        </label>
-        <select
-          id="f-cd"
-          className="input input-sm"
-          value={filter.cd}
-          onChange={(e) => setParam({ cd: e.target.value || null, l2: null })}
-        >
-          <option value="">{t("All compliance drivers")}</option>
-          {cat.data?.sources
-            .filter((s) => !filter.src || String(s.id) === filter.src)
-            .map((s) => (
-              <optgroup key={s.id} label={s.name}>
-                {s.drivers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.ref}
-                    {c.name ? ` · ${c.name}` : ""}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-        </select>
-        <label className="sr-only" htmlFor="f-sys">
-          {t("System")}
-        </label>
-        <select
-          id="f-sys"
-          className="input input-sm"
-          value={filter.sys}
-          onChange={(e) => setParam({ sys: e.target.value || null, l2: null })}
-        >
-          <option value="">{t("All systems")}</option>
-          {cat.data?.systems.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.name}
-              {x.archived ? ` (${t("archived")})` : ""}
-            </option>
-          ))}
-        </select>
+            <SelectSearch
+              label={t("Business driver")}
+              allLabel={t("All business drivers")}
+              value={filter.bd}
+              onChange={(v) => setParam({ bd: v || null, l2: null })}
+              options={(cat.data?.drivers ?? []).map((d) => ({ value: d.code, label: `${d.code} · ${d.name}` }))}
+            />
+            <SelectSearch
+              label={t("Compliance source")}
+              allLabel={t("All compliance sources")}
+              value={filter.src}
+              onChange={(v) => setParam({ src: v || null, cd: null, l2: null })}
+              options={(cat.data?.sources ?? []).map((x) => ({ value: String(x.id), label: x.name }))}
+            />
+            <SelectSearch
+              label={t("Compliance driver")}
+              allLabel={t("All compliance drivers")}
+              value={filter.cd}
+              onChange={(v) => setParam({ cd: v || null, l2: null })}
+              options={(cat.data?.sources ?? [])
+                .filter((x) => !filter.src || String(x.id) === filter.src)
+                .flatMap((x) =>
+                  x.drivers.map((c) => ({ value: String(c.id), label: c.ref + (c.name ? ` · ${c.name}` : ""), group: x.name })),
+                )}
+            />
+            <SelectSearch
+              label={t("System")}
+              allLabel={t("All systems")}
+              value={filter.sys}
+              onChange={(v) => setParam({ sys: v || null, l2: null })}
+              options={(cat.data?.systems ?? []).map((x) => ({
+                value: String(x.id),
+                label: x.name + (x.archived ? ` (${t("archived")})` : ""),
+              }))}
+            />
           </div>
         </details>
         {refActive && (
@@ -424,13 +404,31 @@ export default function UseCases() {
           <label className="sr-only" htmlFor="uc-search">
             {t("Search use cases")}
           </label>
-          <input
-            id="uc-search"
-            className="input input-sm"
-            placeholder={t("Search use cases, rules, ATT&CK IDs")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <div className="tree-tools">
+            <input
+              id="uc-search"
+              className="input input-sm grow"
+              placeholder={t("Search use cases, rules, ATT&CK IDs")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {editor && (
+              <button
+                type="button"
+                className={"btn btn-sm" + (selecting ? " active" : "")}
+                aria-pressed={selecting}
+                onClick={() => {
+                  setSelecting((x) => !x);
+                  setPicked(new Set());
+                }}
+              >
+                {selecting ? t("Done") : t("Select")}
+              </button>
+            )}
+          </div>
+          {selecting && (
+            <BulkBar count={picked.size} onAction={setBulk} onClear={() => setPicked(new Set())} />
+          )}
           {cat.data?.l1s.map((l1) => {
             const children = cat.data!.l2s.filter((x) => x.l1_code === l1.code && matches(x));
             const l1Hit = !!q && (l1.code.toLowerCase().includes(q) || l1.name.toLowerCase().includes(q));
@@ -438,7 +436,15 @@ export default function UseCases() {
             const open = q || filtering || !collapsed.has(l1.code);
             return (
               <div key={l1.code} className="tree-group">
-                <div className="tree-l1-row">
+                <div className={"tree-l1-row" + (selecting ? " selecting" : "")}>
+                {selecting && (
+                  <TreeCheck
+                    label={t("Select all in {code}", { code: l1.code })}
+                    codes={children.map((x) => x.code)}
+                    picked={picked}
+                    onChange={togglePick}
+                  />
+                )}
                 <button
                   type="button"
                   className="tree-l1"
@@ -476,7 +482,15 @@ export default function UseCases() {
                     const gap = !sc || sc.scored_rules === 0;
                     const hits = ruleHits.get(l2.code) ?? [];
                     return (
-                      <div key={l2.code} className="tree-l2-wrap">
+                      <div key={l2.code} className={"tree-l2-wrap" + (selecting ? " selecting" : "")}>
+                      {selecting && (
+                        <TreeCheck
+                          label={t("Select {code}", { code: l2.code })}
+                          codes={[l2.code]}
+                          picked={picked}
+                          onChange={togglePick}
+                        />
+                      )}
                       <button
                         type="button"
                         className={"tree-l2" + (l2.code === selectedCode ? " active" : "")}
@@ -550,10 +564,21 @@ export default function UseCases() {
           )}
           {/* L2 use cases only group rules: no configuration here, rules have it (issue #25) */}
           {selected && <LifecyclePanel key={selected.code} level="l2" code={selected.code} onChanged={refresh} />}
+          {selected && <TasksPanel key={"t" + selected.code} level="l2" code={selected.code} />}
         </section>
       </div>
       )}
 
+      {bulk && cat.data && (
+        <BulkDialog
+          action={bulk}
+          codes={[...picked].sort()}
+          drivers={cat.data.drivers}
+          sources={cat.data.sources}
+          onClose={() => setBulk(null)}
+          onSaved={refresh}
+        />
+      )}
       {driversOf && (
         <EditDriversDialog l2={driversOf} onClose={() => setDriversOf(null)} onSaved={refresh} />
       )}
@@ -594,6 +619,35 @@ export default function UseCases() {
         />
       )}
     </>
+  );
+}
+
+/** Checkbox of the tree's select mode; for an L1 it stands for all its visible L2 use cases. */
+function TreeCheck({
+  label,
+  codes,
+  picked,
+  onChange,
+}: {
+  label: string;
+  codes: string[];
+  picked: Set<string>;
+  onChange: (codes: string[], on: boolean) => void;
+}) {
+  const n = codes.filter((c) => picked.has(c)).length;
+  const all = codes.length > 0 && n === codes.length;
+  return (
+    <input
+      type="checkbox"
+      className="tree-check"
+      aria-label={label}
+      checked={all}
+      disabled={!codes.length}
+      ref={(el) => {
+        if (el) el.indeterminate = n > 0 && !all;
+      }}
+      onChange={() => onChange(codes, !all)}
+    />
   );
 }
 
@@ -821,6 +875,7 @@ function RuleTable({
   heads: Record<string, ConfigCommit>;
   refLink: RefLink;
 }) {
+  const ls = useLoad(loadLogSourceMap);
   return (
     <div className="card table-card">
       <table className="table">
@@ -867,6 +922,7 @@ function RuleTable({
                   items={r.log_sources}
                   href={(s) => refLink("log_source", s)}
                   title={(s) => t("Show all rules with log source {name}", { name: s })}
+                  warn={(s) => logSourceWarning(ls.data?.get(s))}
                 />
               </td>
               <td>

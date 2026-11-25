@@ -413,6 +413,76 @@ export interface LifecycleState {
   allowed: Lifecycle[];
   events: LifecycleEvent[];
 }
+export type LogSourceState = "never" | "ok" | "due" | "overdue" | "issues";
+export type LogSourceCheck = "intake" | "configuration" | "filtering" | "responsibilities";
+export const LOG_SOURCE_CHECKS: LogSourceCheck[] = ["intake", "configuration", "filtering", "responsibilities"];
+export type CheckResult = "ok" | "issues" | "na";
+export interface LogSourceStatus {
+  id: number;
+  name: string;
+  description: string;
+  owner: string;
+  verification_interval_days: number | null;
+  interval: number;
+  last_verified_at: string | null;
+  last_verified_by: string | null;
+  due: string | null;
+  days_left: number | null;
+  status: LogSourceState;
+  issues_at: string | null;
+  rules: string[];
+  systems: string[];
+}
+export interface LogSourceVerification {
+  id: number;
+  verified_at: string;
+  username: string;
+  result: "ok" | "issues";
+  note: string;
+  checks: Record<LogSourceCheck, { result: CheckResult; note: string }>;
+}
+export type TaskKind = "review" | "tune" | "update_settings" | "other";
+export interface Task {
+  id: number;
+  level: Level;
+  code: string;
+  name: string;
+  kind: TaskKind;
+  title: string;
+  body: string;
+  status: "open" | "done";
+  created_by: string;
+  created_at: string;
+  due_date: string | null;
+  overdue: boolean;
+  assignee: string | null;
+  done_by: string | null;
+  done_at: string | null;
+}
+export interface TaskInput {
+  kind?: TaskKind;
+  title?: string;
+  body?: string;
+  due_date?: string | null;
+  assignee?: string | null;
+  status?: "open" | "done";
+}
+export interface BulkResult {
+  changed: number;
+  results: { code: string; ok: boolean; error: string | null }[];
+}
+export interface ListChange<T = string> {
+  add: T[];
+  remove: T[];
+}
+export interface BulkL2Update {
+  codes: string[];
+  risk_level?: number | null;
+  target_implementation?: number | null;
+  actors?: ListChange;
+  business_drivers?: ListChange;
+  compliance_driver_ids?: ListChange<number>;
+}
 export interface LifecycleChange {
   to_status: Lifecycle;
   driver_type: string;
@@ -1201,6 +1271,37 @@ export const api = {
   l2: (code: string) => request<L2>("GET", `/api/l2/${enc(code)}`),
   createL2: (body: L2Input & { code: string; name: string }) => request<L2>("POST", "/api/l2", body),
   updateL2: (code: string, body: L2Input) => request<L2>("PATCH", `/api/l2/${enc(code)}`, body),
+  /** Log source verification (#75). */
+  logSourceStatuses: (withinDays = 30) =>
+    request<LogSourceStatus[]>("GET", `/api/log-sources/verification?within_days=${withinDays}`),
+  verifyLogSource: (
+    id: number,
+    body: { checks: Record<LogSourceCheck, { result: CheckResult; note: string }>; note: string; verified_at?: string },
+  ) => request<LogSourceVerification>("POST", `/api/log-sources/${id}/verify`, body),
+  logSourceHistory: (id: number) => request<LogSourceVerification[]>("GET", `/api/log-sources/${id}/verifications`),
+  logSourceProfile: (id: number, body: { owner: string; verification_interval_days: number | null }) =>
+    request<LogSourceStatus>("PUT", `/api/log-sources/${id}/profile`, body),
+  logSourceSettings: () => request<{ default_days: number }>("GET", "/api/log-sources/settings"),
+  putLogSourceSettings: (default_days: number) =>
+    request<{ default_days: number }>("PUT", "/api/log-sources/settings", { default_days }),
+  /** Tasks on L2 use cases and L3 rules (#74). */
+  tasks: (filter: { status?: "open" | "done" | "all"; assignee?: string; kind?: string; overdue?: boolean } = {}) =>
+    request<Task[]>(
+      "GET",
+      `/api/tasks?${new URLSearchParams(Object.entries(filter).filter(([, v]) => v !== undefined && v !== "" && v !== false).map(([k, v]) => [k, String(v)]))}`,
+    ),
+  ownerTasks: (level: Level, code: string) => request<Task[]>("GET", `/api/${level}/${enc(code)}/tasks`),
+  addTask: (level: Level, code: string, body: TaskInput & { title: string }) =>
+    request<Task>("POST", `/api/${level}/${enc(code)}/tasks`, body),
+  updateTask: (id: number, body: TaskInput) => request<Task>("PATCH", `/api/tasks/${id}`, body),
+  deleteTask: (id: number) => request<void>("DELETE", `/api/tasks/${id}`),
+  taskAssignees: () => request<{ username: string; display_name: string }[]>("GET", "/api/tasks/assignees"),
+  /** Bulk edit of L2 use cases (#73): each code is changed on its own, failures are listed. */
+  bulkUpdateL2: (body: BulkL2Update) => request<BulkResult>("POST", "/api/l2-bulk/update", body),
+  bulkLifecycleL2: (body: LifecycleChange & { codes: string[] }) =>
+    request<BulkResult>("POST", "/api/l2-bulk/lifecycle", body),
+  bulkVerifyL2: (body: { codes: string[]; result: "ok" | "issues"; note: string; verified_at?: string }) =>
+    request<BulkResult>("POST", "/api/l2-bulk/verify", body),
   /** Refused with 409 and `systems` while systems link the L2 and confirm is false (#48). */
   deleteL2: (code: string, confirm = false) =>
     request<void>("DELETE", `/api/l2/${enc(code)}${confirm ? "?confirm=true" : ""}`),

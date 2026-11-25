@@ -30,6 +30,8 @@ const StrideMappingPage = lazyPage(() => import("./pages/StrideMappingPage"));
 const SystemDetail = lazyPage(() => import("./pages/SystemDetail"));
 const Systems = lazyPage(() => import("./pages/Systems"));
 const TestDetail = lazyPage(() => import("./pages/TestDetail"));
+const LogSources = lazyPage(() => import("./pages/LogSources"));
+const Tasks = lazyPage(() => import("./pages/Tasks"));
 const TestLibrary = lazyPage(() => import("./pages/TestLibrary"));
 const UseCases = lazyPage(() => import("./pages/UseCases"));
 const Users = lazyPage(() => import("./pages/Users"));
@@ -58,7 +60,9 @@ export default function App() {
           <Route path="verification/quick-tests" element={<QuickTests />} />
           <Route path="verification/gaps" element={<Gaps />} />
           <Route path="verification/library" element={<TestLibrary />} />
+          <Route path="verification/log-sources" element={<LogSources />} />
           <Route path="verification/tests/:id" element={<TestDetail />} />
+          <Route path="tasks" element={<Tasks />} />
           <Route path="drivers" element={<Drivers />} />
           <Route path="systems" element={<Systems />} />
           <Route path="systems/:id" element={<SystemDetail />} />

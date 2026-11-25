@@ -1276,3 +1276,66 @@ input, select, textarea, progress { accent-color: var(--c-accent); }
 .more-details > summary:focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; border-radius: var(--radius); }
 .more-details > .stack-sm { padding: 0 14px 14px; }
 .modal form > .row-actions:last-child { position: sticky; bottom: -22px; background: var(--c-surface); padding: 12px 0 22px; margin-bottom: -22px; border-top: 1px solid var(--c-border); z-index: 2; }
+
+/* Searchable pickers (issue #76): same search box in every list, single-select filters */
+.picker-search { position: sticky; top: -6px; z-index: 1; margin: -6px -6px 4px; width: calc(100% + 12px); border-radius: var(--radius) var(--radius) 0 0; border-width: 0 0 1px; }
+.picker-empty { padding: 6px 8px; }
+.picker-option { display: block; width: 100%; text-align: left; min-height: 34px; padding: 6px 8px; border: 0; background: none; color: inherit; font: inherit; border-radius: var(--radius-sm); cursor: pointer; }
+.picker-option:hover, .picker-option:focus-visible { background: var(--c-subtle); outline: none; }
+.picker-option.active { font-weight: 600; color: var(--c-accent); }
+.multi-list label:focus-within { background: var(--c-subtle); }
+.select-search { min-width: 180px; max-width: 240px; flex: 0 1 220px; }
+.select-search .multi-summary { min-height: 34px; padding: 4px 28px 4px 10px; }
+.select-search-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-search .multi-summary:not(.has-value) .select-search-value { color: var(--c-muted); }
+.select-search .multi-list { min-width: 280px; }
+
+/* Multi edit in the use case tree (issue #73) */
+.tree-tools { display: flex; gap: 6px; align-items: center; }
+.tree-tools .btn.active { border-color: var(--c-accent); color: var(--c-accent); }
+.bulk-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0; padding: 8px 10px; background: var(--c-accent-soft); border: 1px solid var(--c-accent); border-radius: var(--radius); }
+.tree-l2-wrap.selecting { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 2px; }
+.tree-l2-wrap.selecting > .tree-l2 { padding-left: 8px; }
+.tree-l2-wrap.selecting > .tree-check { margin-left: 26px; }
+.tree-l2-wrap.selecting > .tree-rule { grid-column: 2; }
+.tree-check { width: 18px; height: 18px; flex: none; margin: 0 2px 0 4px; accent-color: var(--c-accent); cursor: pointer; }
+.bulk-codes { margin: 0; max-height: 4.5em; overflow-y: auto; }
+.bulk-failed { margin: 0; padding-left: 18px; max-height: 240px; overflow-y: auto; }
+.bulk-break { flex-basis: 100%; height: 0; }
+
+/* Tasks on use cases and rules (issue #74) */
+.task-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.task-item { padding: 10px 0; border-top: 1px solid var(--c-border); }
+.task-item:first-child { border-top: 0; padding-top: 0; }
+.task-head { display: flex; align-items: center; gap: 8px; }
+.task-check { width: 18px; height: 18px; flex: none; accent-color: var(--c-accent); cursor: pointer; }
+.task-title { font-weight: 600; text-align: left; color: var(--c-ink); text-decoration: none; flex: 1; min-width: 0; }
+.task-title:hover { text-decoration: underline; }
+.task-item.is-done .task-title { text-decoration: line-through; color: var(--c-muted); }
+.task-meta { margin: 2px 0 0 26px; }
+.task-body { margin: 8px 0 0 26px; }
+.task-count { margin-left: 6px; font-size: 12px; vertical-align: middle; }
+.due-overdue { color: var(--c-poor-ink); font-weight: 600; }
+.tasks-table td { vertical-align: top; }
+.tasks-table .task-title { font-weight: 600; }
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 46ch; }
+.tasks-table td.cell-check { min-width: 0; width: 1%; padding-right: 0; }
+.tasks-table td:nth-child(2) { min-width: 220px; }
+.tasks-table tr.is-done .task-title { text-decoration: line-through; color: var(--c-muted); }
+
+/* Log source verification (issue #75) */
+.pill-bad { background: var(--c-poor-soft); color: var(--c-poor-ink); }
+.pill-muted { background: var(--c-subtle); color: var(--c-muted); }
+.chip.chip-warn { background: var(--c-poor-soft); color: var(--c-poor-ink); border-color: var(--c-poor); }
+.ls-checks { display: flex; flex-direction: column; gap: 10px; }
+.ls-check { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: var(--radius); }
+.ls-check .radio-row { margin: 0; }
+.ls-check .input { grid-column: 1 / -1; }
+.ls-check-title { font-weight: 600; }
+.ls-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ls-history li { border-top: 1px solid var(--c-border); padding-top: 10px; }
+.ls-history li:first-child { border-top: 0; padding-top: 0; }
+.ls-check-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ls-warning { margin: 0; }
+.modal form > .row-actions.ls-profile-actions { position: static; margin: 0; padding: 6px 0 0; border-top: 0; background: none; }
+.ls-history-head { margin: 8px 0 0; }

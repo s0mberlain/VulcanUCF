@@ -21,6 +21,8 @@ const PATHS: Record<string, string> = {
   quick: "M13 2L4 14h7l-1 8 9-12h-7l1-8z",
   gaps: "M12 4l9 16H3L12 4zM12 10v4M12 17h.01",
   library: "M4 5h16v4H4zM4 11h16v4H4zM4 17h16v3H4z",
+  logsources: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6",
+  tasks: "M9 6h11M9 12h11M9 18h11M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11M3.5 18l1.5 1.5L7.5 17",
   signout: "M10 4H5v16h5M15 8l4 4-4 4M19 12H9",
 };
 

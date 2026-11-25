@@ -25,7 +25,10 @@ All screenshots use generated demo data with made-up names.
    - [Change the status of a use case](#change-the-status-of-a-use-case)
    - [Keep the rule configuration under version control](#keep-the-rule-configuration-under-version-control)
    - [Verify a rule](#verify-a-rule)
+   - [Verify log sources](#verify-log-sources)
    - [Link drivers](#link-drivers)
+   - [Edit several use cases at once](#edit-several-use-cases-at-once)
+   - [Track work with tasks](#track-work-with-tasks)
 4. [Priorities](#4-priorities)
 5. [Threat modelling with business owners](#5-threat-modelling-with-business-owners)
    - [Add a system](#add-a-system)
@@ -178,17 +181,18 @@ The sidebar is grouped by what you do:
 
 | Group | Pages |
 |---|---|
-| **Daily work** | Dashboard, Use cases (with Detection requests), Verification (with Campaigns, Quick tests, Detection gaps, Test library), Priorities, Threat modelling |
+| **Daily work** | Dashboard, Use cases (with Detection requests), Verification (with Campaigns, Quick tests, Detection gaps, Test library, Log sources), Tasks, Priorities, Threat modelling |
 | **Analysis** | ATT&CK coverage, Output metrics, History & trends |
 | **Setup** | Business drivers, STRIDE mapping, Reference lists, Import / Export, Integrations |
 | **Administration** | Audit log, Users, Settings |
 
-Badges next to an entry count what needs work, for example overdue verifications or open detection
-requests.
+Badges next to an entry count what needs work, for example overdue verifications, open detection
+requests or open tasks assigned to you.
 
 The **Dashboard** is the starting point. It shows the key figures, a **Needs attention** list
 (overdue verifications, open detection requests, gaps in systems, interviews that are due,
-detection gaps from tests), detection per L1 use case, upcoming verifications, recent configuration
+detection gaps from tests, log sources that are overdue or failed their check, overdue tasks and
+tasks assigned to you), detection per L1 use case, upcoming verifications, recent configuration
 commits and the coverage per business driver and compliance source.
 
 ![Dashboard](screenshots/dashboard.png)
@@ -208,6 +212,12 @@ Open **Use cases**. There are two views:
   or a reference entry. Filters are part of the URL, so you can bookmark or share a filtered view.
 
 ![Use cases](screenshots/use-cases.png)
+
+The filter dropdowns and the pickers for log sources, detection technologies and scopes all work
+the same way: open one and start typing to search, or start typing while the field has the focus.
+Arrow keys move through the list, Enter picks the only hit, Escape clears the search and then
+closes the list. In the pickers of a rule, a name that is not in the list yet can be added with
+**Add “…”**.
 
 Many values are links to a filtered view. For example, clicking a log source on a rule shows all
 rules that use it, and clicking a threat actor shows all L2 use cases with that actor.
@@ -318,6 +328,35 @@ last check failed. From there you can also plan a campaign or start a quick test
 
 ![Verification](screenshots/verification.png)
 
+### Verify log sources
+
+Rules only work when their logs arrive complete and unfiltered, so log sources are checked at
+intervals too. Open **Verification → Log sources**:
+
+- The figures show how many log sources are verified in time, how many are overdue (never verified
+  or past the due date), how many failed their last check and how many are due in the window.
+- The table lists each log source with its owner, the rules and systems that use it, the last
+  check, the due date and the state.
+
+![Log source verification](screenshots/log-sources.png)
+
+To record a check, click **Verify now** and set each of the four items to *OK*, *Issues* or *Not
+applicable*, with a note where needed:
+
+| Check | What to look at |
+|---|---|
+| **Log intake** | Events arrive in the SIEM, complete and on time |
+| **Configuration** | Source and collector are configured as documented |
+| **Filtering** | Filters and parsers drop nothing the rules need |
+| **Responsibilities** | Owner and contacts are known and up to date |
+
+As for rules, only a check without issues counts as verified and moves the due date. Click the name
+of a log source to set its **owner** and its own **interval**, and to see the check history. Admins
+set the default interval under **Settings → Log source verification**.
+
+When a log source is overdue or its last check found issues, every rule that uses it shows a
+warning on its page, and its chip is marked with ⚠ in the rule tables. Rule scores do not change.
+
 ### Link drivers
 
 1. Open an L2 use case in the tree and click **Edit drivers** (or use the drivers column in the
@@ -331,6 +370,47 @@ To maintain the drivers themselves, open **Setup → Business drivers**: add bus
 and their requirements with **+ Requirement**. The page shows the coverage of each driver and
 marks gaps. Deleting a driver that is linked asks first and lists the use cases that lose the
 link.
+
+### Edit several use cases at once
+
+Analysts and admins can change several L2 use cases in one step from the tree:
+
+1. Click **Select** next to the search on the *Use cases* page. Checkboxes appear in the tree.
+2. Tick L2 use cases, or tick an L1 to select all its L2 use cases that are shown (search and
+   filters apply).
+3. Choose an action in the bar above the tree:
+   - **Edit fields**: set the risk level or target implementation, and add or remove business
+     drivers, compliance drivers and threat actors. Only what you change is applied; other entries
+     in the lists stay.
+   - **Change status**: the same change driver and note for all of them.
+   - **Verify**: record one verification for all of them.
+4. After saving, the dialog lists how many use cases were changed and which ones were skipped, with
+   the reason.
+
+![Edit several use cases](screenshots/bulk-edit.png)
+
+A status change is applied only where it is allowed. A use case whose definition of done is not
+complete is skipped. Admins who want to skip the definition of done do it on that use case alone.
+Name and description are always edited one use case at a time.
+
+### Track work with tasks
+
+Tasks keep track of work on a use case or rule, such as a review, tuning or a settings change.
+
+1. Open a rule, or an L2 use case in the tree, and click **+ Add task** in the *Tasks* box.
+2. Choose the **kind**, enter a **title** and, if you like, a **due date**, an **assignee** and a
+   description (Markdown).
+3. Click **Add task**. The task shows who created it and when.
+
+Tick the checkbox of a task to mark it as done, or untick it to reopen it. Click its title to read
+the description, edit it or delete it. Only the creator or an admin can delete a task.
+
+The **Tasks** page lists the tasks of all use cases and rules. Filter by status, assignee (*Me*,
+*Nobody* or a person), kind and text. The figures at the top show the open tasks, the ones
+assigned to you and the overdue ones; click one to filter. The sidebar badge counts your open
+tasks.
+
+![Tasks](screenshots/tasks.png)
 
 ---
 
@@ -651,7 +731,7 @@ These pages are for admins (the audit log also for auditors).
 |---|---|
 | **Users** | Add local users with a role (**Add local user**), change roles, disable or delete accounts, reset passwords and two-factor login. Red team accounts have an end date: fixed, or following the end of their campaigns. SSO accounts get their role from the identity provider |
 | **Audit log** | Every sign-in and change with old and new values, imports, settings changes and the client address |
-| **Settings** | The **SIEM name** format of rules, such as `$companyName:$ucID:$ucName`, with your own variables (`companyName = MYCORP`). Built-in variables: `$ucID`, `$ucName`, `$l2ID`, `$l1ID`. Also shows the space used by interview evidence |
+| **Settings** | The **SIEM name** format of rules, such as `$companyName:$ucID:$ucName`, with your own variables (`companyName = MYCORP`). Built-in variables: `$ucID`, `$ucName`, `$l2ID`, `$l1ID`. The default **interval for log source checks**. Also shows the space used by interview evidence |
 | **STRIDE mapping** | Which L2 use cases each STRIDE category proposes in interviews, the **proposal threshold** (1–25) and the **log source filter**. Lists L2 use cases no category proposes. **Restore default mapping** resets it |
 | **Reference lists** | Threat actors, log sources, detection technologies and scopes (analysts too) |
 | **Business drivers** | Business drivers, compliance sources and requirements (analysts too) |

@@ -5,6 +5,8 @@ import { api, type L3, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
+import { TasksPanel } from "../components/Tasks";
+import { loadLogSourceMap, logSourceWarning } from "../lib/logSources";
 import { DriverBlock } from "../components/Drivers";
 import { MarkdownField } from "../components/Markdown";
 import OutputPanel from "../components/OutputPanel";
@@ -98,6 +100,8 @@ export default function RuleDetail() {
     return { log, tech, scope };
   });
   const nameFormat = useLoad(() => api.ruleNameSettings());
+  // status of the rule's log sources (issue #75): overdue or failed checks are flagged
+  const lsStatus = useLoad(loadLogSourceMap);
   const [copied, setCopied] = useState(false);
 
   const [form, setForm] = useState<Form | null>(null);
@@ -452,6 +456,7 @@ export default function RuleDetail() {
             </section>
 
             <LifecyclePanel level="l3" code={code} onChanged={() => void rule.reload()} />
+            <TasksPanel level="l3" code={code} />
             {editor && (
               <p className="instant-note">
                 {t(
@@ -580,6 +585,26 @@ export default function RuleDetail() {
                   onCreate={addRef("scope")}
                 />
               </div>
+              {(() => {
+                const flagged = r.log_sources.filter((n) => logSourceWarning(lsStatus.data?.get(n)));
+                return (
+                  flagged.length > 0 && (
+                    <div className="note-box ls-warning" role="status">
+                      <strong>{t("Log source checks need attention")}</strong>
+                      <ul className="plain-list small">
+                        {flagged.map((n) => (
+                          <li key={n}>
+                            <strong>{n}</strong>: {logSourceWarning(lsStatus.data?.get(n))}
+                          </li>
+                        ))}
+                      </ul>
+                      <Link to="/verification/log-sources" className="small">
+                        {t("Open log source verification")}
+                      </Link>
+                    </div>
+                  )
+                );
+              })()}
               <div className="form-grid ref-links" aria-label={t("Rules that share an entry")}>
                 {(
                   [
@@ -595,6 +620,7 @@ export default function RuleDetail() {
                         <Chips
                           items={[...names]}
                           href={(n) => refHref(kind, n)}
+                          warn={kind === "log_source" ? (n) => logSourceWarning(lsStatus.data?.get(n)) : undefined}
                           title={(n) => {
                             const used = items?.find((i) => i.name === n)?.used_by?.length;
                             return used === undefined

@@ -198,6 +198,7 @@ export default function Settings() {
         </div>
       </form>
 
+      <LogSourceIntervalCard />
       <EvidenceStorageCard />
     </>
   );
@@ -228,6 +229,63 @@ function EvidenceStorageCard() {
           </p>
         </>
       )}
+    </section>
+  );
+}
+
+/** Default interval for log source checks (issue #75); a log source can override it. */
+function LogSourceIntervalCard() {
+  const current = useLoad(() => api.logSourceSettings());
+  const [days, setDays] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const value = days ?? current.data?.default_days.toString() ?? "";
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.putLogSourceSettings(Number(value));
+      setSaved(true);
+      void current.reload();
+      setDays(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <section className="card stack-sm" aria-labelledby="lsv-h">
+      <h2 id="lsv-h">{t("Log source verification")}</h2>
+      <ErrorNote error={error ?? current.error} />
+      <form className="row-actions start" onSubmit={save}>
+        <label className="field">
+          {t("Verify log sources every (days)")}
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={3650}
+            required
+            value={value}
+            onChange={(e) => {
+              setDays(e.target.value);
+              setSaved(false);
+            }}
+          />
+        </label>
+        <button type="submit" className="btn" disabled={days === null}>
+          {t("Save")}
+        </button>
+        {saved && (
+          <span className="saved-tick" role="status">
+            {t("Saved")}
+          </span>
+        )}
+      </form>
+      <p className="small muted" style={{ margin: 0 }}>
+        {t("Default for all log sources; a log source can have its own interval on the log source verification page.")}
+      </p>
     </section>
   );
 }
