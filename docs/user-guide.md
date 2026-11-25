@@ -33,6 +33,7 @@ All screenshots use generated demo data with made-up names.
 5. [Threat modelling with business owners](#5-threat-modelling-with-business-owners)
    - [Add a system](#add-a-system)
    - [Run the interview](#run-the-interview)
+   - [Use case details](#use-case-details)
    - [Complete, confirm and repeat](#complete-confirm-and-repeat)
    - [Work on detection requests](#work-on-detection-requests)
 6. [Purple team tests](#6-purple-team-tests)
@@ -461,28 +462,48 @@ need can be archived: it is hidden, not counted as due and has no effect on prio
 
 ### Run the interview
 
-On the system page click **Start interview**. The interview has three steps; **Save draft** keeps
-your work, and the draft can be continued later.
+On the system page click **Start interview**. The interview is a wizard with five steps. The step
+list on the left shows where you are and what is done; click a step to go there. **Save and
+continue** saves and opens the next step, **Save draft** keeps your work, and the draft can be
+continued later.
 
-**1 · Context.** Interview date, participants and notes (Markdown). Attach **evidence** such as
+While you work, the **live summary** on the right shows your progress, a small threat matrix, the
+threats that apply (highest risk first), the use cases by state and the detection requests. Under
+**Needs attention** it lists what is still open, such as a threat without a rating or a component
+without log sources; click an entry to go there.
+
+**1 · Interview.** Interview date, participants and notes (Markdown). Attach **evidence** such as
 architecture diagrams, PDFs, images or Threat Modeling Tool files (up to 20 MB each) by drag and
 drop or **+ Add files**.
 
-**2 · Components and threats.** Split the system into a few **components** (for example web front
-end, API, database, admin access). For each component:
+**2 · Components.** Split the system into a few **components** (for example web front end, API,
+database, admin access) and choose the **log sources** each one sends to the SIEM. Proposed use
+cases are checked against them. Each card shows how many of its six questions are answered and
+warns when a component has no log sources yet.
 
-1. Choose the **log sources** it sends to the SIEM. Use cases are checked against them.
-2. For each STRIDE category (*Spoofing, Tampering, Repudiation, Information disclosure, Denial of
-   service, Elevation of privilege*) decide whether the threat **applies**, **does not apply** or
-   was **not discussed**.
-3. For each threat that applies, describe it and rate **likelihood** and **impact** (1–5). The risk
-   score is likelihood × impact (1–25).
-4. Optionally add **further threats** linked to MITRE ATT&CK techniques, for example password
-   spraying (T1110.003).
+![Interview: components](screenshots/interview-components.png)
 
-![Interview: components and threats](screenshots/interview-components.png)
+**3 · Threats.** One component at a time; the step list shows each component with its answered
+questions (for example 5/6). For each STRIDE category the app asks a plain question you can read
+out to the business owner, for example *"Could someone pretend to be a legitimate user or system
+on the web front end?"*. Answer **Yes, it applies**, **No** or **Not discussed**.
 
-**3 · Risks and use cases.** The app proposes use cases for every threat:
+For each threat that applies:
+
+1. Describe **what could happen**, in the owner's words.
+2. Click a square in the **risk grid**: rows are likelihood (1 rare to 5 almost certain), columns
+   impact (1 minor to 5 severe). The square shows the risk score (likelihood × impact, 1–25) and
+   its colour; the text under it says whether the score reaches the proposal threshold. The arrow
+   keys move through the grid.
+3. Optionally add **further threats** linked to MITRE ATT&CK techniques, for example password
+   spraying (T1110.003). They use the same risk grid.
+
+**Next: …** opens the next component; after the last one, **Next: use cases** opens step 4.
+**Mark n undecided as "does not apply"** answers the rest of a component in one click.
+
+![Interview: threats of one component](screenshots/threat-modelling.png)
+
+**4 · Use cases.** The app proposes use cases for every threat:
 
 - A STRIDE threat with a risk score at or above the **proposal threshold** (8 by default) proposes
   the L2 use cases mapped to its category in the [STRIDE mapping](#11-administration).
@@ -490,18 +511,50 @@ end, API, database, admin access). For each component:
 - With the log source filter on, use cases whose active rules need log sources the component
   does not deliver are **held back** and listed separately.
 
-You can add use cases (a whole L2 or a single rule) with **+ Use case**, remove proposals with a
-reason, and add **detection requests** for what no use case covers yet.
+You can add use cases (a whole L2 or a single rule) with **+ Use case** and remove proposals with a
+reason. The **risk / coverage matrix** shows each component × threat as *Covered*, *Partly
+covered*, *Gap* or *Below threshold*; click a cell to jump to the risk. Switch between **By risk**
+and **By use case**. A cell with ↗ and a number has that many detection requests.
 
-The **risk / coverage matrix** shows each component × threat as *Covered*, *Partly covered*,
-*Gap* or *Below threshold*; click a cell to jump to the risk. Switch between **By risk** and **By
-use case**.
+**Detection requests** ask the use case team for a new detection. You can add them to **any threat
+that applies**, also when use cases already cover it, and a threat can have **several** requests:
 
-![Risks and use cases](screenshots/threat-modelling.png)
+1. Click **+ Detection request** on the risk, or use the form under *Detection requests*.
+2. Enter what the SOC should detect, choose the threat and, optionally, describe why.
+3. Click **Save**. Requests can be edited or removed until the interview is completed.
+
+Click **Details** next to a use case to open its [details](#use-case-details).
+
+**5 · Overview and complete.** Check the result before you complete the interview. Three tabs show
+it from different sides:
+
+- **Matrix**: the threat matrix with all risks, and a risk map that shows where the rated
+  threats sit on the likelihood × impact grid.
+- **Use case board**: every accepted use case with the threats it should detect, in columns by what
+  the use case team has to do next: *Detects today*, *Log sources missing* and *No active rule*.
+  The last column lists the **detection requests** per threat and any gap without a request.
+- **Threat list**: every threat in one table with its score, coverage, use cases and requests.
+
+![Overview: use case board](screenshots/use-case-board.png)
+
+<a id="use-case-details"></a>**Use case details.** Click a use case on the board, in the threat list
+or **Details** in step 4 to open a side panel with:
+
+- what the use case detects and its state for this system (detects, log sources missing or no
+  active rule), with a sentence that explains what that means;
+- the threats of this interview it covers, with their risk scores;
+- its rules with lifecycle status, whether they count for detection, when they were last verified
+  and their log sources, each marked ✓ when the threatened components deliver it and ✗ when not;
+- its MITRE ATT&CK techniques and the other systems it is linked to;
+- **Open in Use cases** to go to the use case itself.
+
+Press **Esc** or **Close** to return to where you were.
+
+![Use case details](screenshots/use-case-details.png)
 
 ### Complete, confirm and repeat
 
-1. Click **Complete interview**. The app tells you how many use cases will be linked to the system
+1. In step 5 click **Complete interview**. The app tells you how many use cases will be linked to the system
    (replacing the links of the previous interview), how many of them have no active rule and how
    many detection requests are created. The interview becomes read-only.
 2. Click **Export PDF** and send the PDF to the business owner.
