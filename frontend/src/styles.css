@@ -854,7 +854,6 @@ th.num .sort-btn { text-align: right; }
 .iv-custom { border-top: 1px dashed var(--c-border); padding-top: 10px; }
 .chip-x { border: 0; background: none; padding: 0 0 0 4px; cursor: pointer; color: inherit; font-size: 1rem; line-height: 1; }
 .iv-score { min-height: 40px; display: flex; align-items: center; }
-.iv-inc { flex-basis: 100%; }
 .iv-proposal { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; }
 .iv-proposal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .iv-rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -1387,7 +1386,17 @@ input, select, textarea, progress { accent-color: var(--c-accent); }
 .iv-q-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 16px; padding-top: 12px; border-top: 1px solid var(--c-track); }
 @media (max-width: 1400px) { .iv-q-body { grid-template-columns: minmax(0, 1fr); } }
 .iv-comp-actions { align-items: center; }
-.iv-custom-grid { flex: 1 1 300px; }
+/* custom ATT&CK threats: fields on the left, risk grid on the right; stacked when the card is narrow */
+.iv-custom-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 12px 20px; align-items: start; }
+.iv-custom-main { display: grid; gap: 10px; min-width: 0; }
+.iv-custom-main .field { min-width: 0; }
+.iv-custom-risk { min-width: 0; }
+.iv-custom-foot { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; align-items: center; }
+.iv-custom { container-type: inline-size; }
+@container (max-width: 760px) {
+  .iv-custom-body { grid-template-columns: minmax(0, 1fr); }
+  .iv-custom-risk { max-width: 420px; }
+}
 
 /* likelihood x impact grid */
 .rgrid { display: grid; gap: 3px; border-radius: var(--radius); }

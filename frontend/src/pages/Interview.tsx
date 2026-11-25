@@ -1486,19 +1486,40 @@ function CustomThreats({
         const inc = customIncomplete(x);
         return (
           <div key={x.key} className={"iv-threat" + (inc ? " is-incomplete" : "")}>
-            <div className="iv-threat-body">
-              <label className="field grow-2">
-                {t("Threat")} *
-                <input
-                  className={"input" + (inc && !x.title.trim() ? " is-invalid" : "")}
-                  value={x.title}
-                  maxLength={255}
+            <div className="iv-custom-body">
+              <div className="iv-custom-main">
+                <label className="field">
+                  {t("Threat")} *
+                  <input
+                    className={"input" + (inc && !x.title.trim() ? " is-invalid" : "")}
+                    value={x.title}
+                    maxLength={255}
+                    disabled={readOnly}
+                    placeholder={t("e.g. Password spraying against the login")}
+                    onChange={(e) => set(x.key, { title: e.target.value })}
+                  />
+                </label>
+                <TechniquePicker
+                  value={x.techniques}
+                  names={names}
+                  techniques={techniques}
                   disabled={readOnly}
-                  placeholder={t("e.g. Password spraying against the login")}
-                  onChange={(e) => set(x.key, { title: e.target.value })}
+                  invalid={inc && !x.techniques.length}
+                  onChange={(v) => set(x.key, { techniques: v })}
                 />
-              </label>
-              <div className="field iv-custom-grid">
+                <label className="field">
+                  {t("Threat description")}
+                  <textarea
+                    className="input textarea"
+                    rows={2}
+                    maxLength={10000}
+                    value={x.description}
+                    disabled={readOnly}
+                    onChange={(e) => set(x.key, { description: e.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="field iv-custom-risk">
                 <span>
                   {t("How likely, and how bad?")} * <RiskScore value={customScore(x)} />
                 </span>
@@ -1510,35 +1531,17 @@ function CustomThreats({
                   onChange={(l, i) => set(x.key, { likelihood: l, impact: i })}
                 />
               </div>
-              <TechniquePicker
-                value={x.techniques}
-                names={names}
-                techniques={techniques}
-                disabled={readOnly}
-                invalid={inc && !x.techniques.length}
-                onChange={(v) => set(x.key, { techniques: v })}
-              />
-              <label className="field grow-2">
-                {t("Threat description")}
-                <textarea
-                  className="input textarea"
-                  rows={2}
-                  maxLength={10000}
-                  value={x.description}
-                  disabled={readOnly}
-                  onChange={(e) => set(x.key, { description: e.target.value })}
-                />
-              </label>
-              {!readOnly && (
-                <div className="field">
-                  <span aria-hidden="true">&nbsp;</span>
-                  <button type="button" className="btn btn-sm" onClick={() => onRemove(x)}>
-                    {t("Remove")}
-                  </button>
-                </div>
+            </div>
+            <div className="iv-custom-foot">
+              {inc ? (
+                <span className="field-error">{t("Incomplete: threat, at least one ATT&CK technique, likelihood and impact are needed.")}</span>
+              ) : (
+                <span />
               )}
-              {inc && (
-                <span className="field-error iv-inc">{t("Incomplete: threat, at least one ATT&CK technique, likelihood and impact are needed.")}</span>
+              {!readOnly && (
+                <button type="button" className="btn btn-sm" onClick={() => onRemove(x)}>
+                  {t("Remove")}
+                </button>
               )}
             </div>
           </div>
