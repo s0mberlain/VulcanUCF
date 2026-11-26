@@ -1805,8 +1805,10 @@ function StepProposals({
       .filter((x) => x.state === "applies")
       .map((x) => ({ value: `${c.key}:${x.category}`, label: `${c.name} / ${threatLabel(x.category)}` })),
   );
+  // value is "<component key>:<category>"; a component key has no colon, but a custom ATT&CK
+  // threat's category does ("custom:<key>"), so split at the first colon (#85)
   const ref = (value: string): ThreatRef => {
-    const i = value.lastIndexOf(":");
+    const i = value.indexOf(":");
     return { component: value.slice(0, i), category: value.slice(i + 1) as Stride };
   };
   const addL2 = (l2_id: number, threats: ThreatRef[]) =>
