@@ -42,7 +42,7 @@ configuration and operations.
 | **Tasks** | Review, tuning and settings tasks on use cases and rules with Markdown text, due date and assignee; central task list |
 | **Priorities** | Risk level and target implementation per use case; rules sorted by gap to target × risk × driver boost |
 | **Drivers** | Business and compliance drivers linked to L2 use cases, driver coverage and gaps |
-| **Threat modelling** | Systems with their business owner, STRIDE interviews per component, risk / coverage matrix, detection requests, evidence and owner sign-off |
+| **Threat modelling** | Systems with their business owner, step-by-step STRIDE interviews per component, risk grid, risk / coverage matrix, use case board and details, detection requests, evidence and owner sign-off |
 | **Purple team tests** | Campaigns, quick tests and a test library; multi-round red / blue team results that verify rules and turn misses into detection gaps; limited red team accounts |
 | **ATT&CK coverage** | Bundled MITRE ATT&CK Enterprise data, coverage heatmap, Navigator layer export, remap of revoked IDs |
 | **Output metrics** | Alerts, incidents, false positives and false negatives per rule and month; CSV import, Microsoft Sentinel / Defender XDR incident export import, SIEM push API |
@@ -58,7 +58,7 @@ All screenshots use the generated demo data.
 | | |
 |---|---|
 | **Use cases**: tree of L1 / L2 use cases with the L2 detail and its rules<br>![Use cases](docs/screenshots/use-cases.png) | **Rule detail**: metrics, weight, test coverage per scope, drivers and details<br>![Rule detail](docs/screenshots/rule-detail.png) |
-| **Priorities**: gap to target per rule and driver coverage<br>![Priorities](docs/screenshots/priorities.png) | **Threat modelling**: STRIDE risks per component and the use cases that cover them<br>![Threat modelling](docs/screenshots/threat-modelling.png) |
+| **Priorities**: gap to target per rule and driver coverage<br>![Priorities](docs/screenshots/priorities.png) | **Threat modelling**: STRIDE questions per component, rated on a risk grid, with a live summary<br>![Threat modelling](docs/screenshots/threat-modelling.png) |
 | **Purple team campaign**: tests with red team execution and blue team outcome<br>![Purple team campaign](docs/screenshots/purple-team-campaign.png) | **ATT&CK coverage**: techniques coloured by the best rule weight<br>![ATT&CK coverage](docs/screenshots/attack-coverage.png) |
 | **Output metrics**: alerts and false positives per month, incident export import<br>![Output metrics](docs/screenshots/output-metrics.png) | |
 
@@ -202,9 +202,12 @@ most 50 %. Deleting a linked driver asks first and lists the use cases that lose
 *Threat modelling* lists the business applications and platforms (**systems**) with their
 business owner, criticality, detection coverage, gaps and interview status.
 
-- An analyst interviews the business owner per system: the system's **components** and the log
-  sources they deliver, and per component the six **STRIDE** threats with likelihood × impact
-  (risk 1–25). Threats beyond STRIDE can be added as custom threats with ATT&CK techniques.
+- An analyst interviews the business owner per system in a five-step wizard: interview context,
+  the system's **components** and the log sources they deliver, then per component the six
+  **STRIDE** threats as plain questions to read out, each rated with one click on a 5 × 5
+  likelihood × impact grid (risk 1–25). Threats beyond STRIDE can be added as custom threats with
+  ATT&CK techniques. A live summary shows progress, the threats that apply, the use cases and what
+  still needs attention.
 - An admin-maintained **STRIDE mapping** (*Setup → STRIDE mapping*) proposes the L2 use cases for
   each threat above a threshold; with the log source filter on, an L2 is held back when its rules
   need log sources the component does not deliver. Analysts can add use cases (a whole L2 or a
@@ -212,8 +215,15 @@ business owner, criticality, detection coverage, gaps and interview status.
 - The **risk / coverage matrix** shows each component × threat as covered, partly covered, gap or
   below threshold; the system page lists the gaps (use cases without rules, rules that get none of
   their log sources).
+- **Detection requests** can be added to any threat that applies, also where use cases already
+  cover it, and a threat can have several. Their description is Markdown with code blocks
+  (language label and copy button) for queries and log samples.
+- The last step gives an **overview** before completing: the matrix with a risk map, a **use case
+  board** (detects today, log sources missing, no active rule, detection requests) and a threat
+  list. A **use case details** panel shows the rules, their lifecycle status and last
+  verification, which log sources the components deliver, and the ATT&CK techniques.
 - Completing an interview links the system to those use cases (system coverage, *Use cases* filter
-  by system, risk boost in *Priorities*) and turns what is missing into **detection requests**.
+  by system, risk boost in *Priorities*) and sends its **detection requests** to the use case team.
   Requests have a status (open, in progress, implemented, rejected, not feasible) and are listed
   for all systems under *Use cases → Detection requests*.
 - Interviews go Draft → Completed → Confirmed: export the interview as PDF, send it to the owner

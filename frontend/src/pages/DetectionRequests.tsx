@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, REQUEST_STATUSES, type OverviewRequest, type RequestStatus } from "../api";
 import { useAuth } from "../auth";
 import { isTodo, StatusChip, StatusDetails, StatusDialog, statusLabel } from "../components/RequestStatus";
+import { Markdown } from "../components/Markdown";
 import { ErrorNote, ShowMore, useLoad, useShowMore } from "../components/ui";
 import { fmtTime } from "../lib/format";
 import { threatLabel } from "../lib/stride";
@@ -255,7 +256,7 @@ export default function DetectionRequests() {
                           <tr id={`req-${id}`} className="req-detail">
                             <td colSpan={6}>
                               <div className="stack-sm">
-                                {r.description ? <p className="req-desc small" style={{ margin: 0 }}>{r.description}</p> : <p className="muted small" style={{ margin: 0 }}>{t("No description.")}</p>}
+                                {r.description ? <Markdown text={r.description} className="req-desc small" /> : <p className="muted small" style={{ margin: 0 }}>{t("No description.")}</p>}
                                 <StatusDetails r={r} />
                                 {editor && !r.archived && (
                                   <div className="row-actions start">

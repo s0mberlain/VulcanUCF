@@ -313,7 +313,7 @@ def build(out, system, lang: str, app_name: str) -> bytes:
             if r.get("status_note"):
                 pdf.p(f"{tr('note')}: {r['status_note']}", size=8.5, color=MUTED)
             if r.get("description"):
-                pdf.p(r["description"], size=9)
+                pdf.md(r["description"], size=9)
     else:
         pdf.p(tr("no_requests"), color=MUTED)
 

@@ -28,7 +28,7 @@ const COVERAGE_HINT: Record<RiskCoverageState, string> = {
   unrated: t("Likelihood or impact is missing."),
 };
 
-function detectionLabel(d: Detection | null, level: "L2" | "L3", deleted: boolean): string {
+export function detectionLabel(d: Detection | null, level: "L2" | "L3", deleted: boolean): string {
   if (deleted) return t("deleted");
   switch (d) {
     case "ok":
@@ -62,6 +62,8 @@ export function RiskCoverage({
   showWeight = false,
   onAdd,
   onRemove,
+  onRequest,
+  onUseCase,
   addDisabled,
   title,
   actions,
@@ -74,6 +76,10 @@ export function RiskCoverage({
   onAdd?: (r: RiskRow) => void;
   /** #57: offers to take a use case off a risk */
   onRemove?: (r: RiskRow, u: RiskUseCase) => void;
+  /** offers "+ Detection request" on every risk, also on covered ones */
+  onRequest?: (r: RiskRow) => void;
+  /** offers "Details" next to every use case */
+  onUseCase?: (u: RiskUseCase) => void;
   addDisabled?: boolean;
   title?: string;
   actions?: React.ReactNode;
@@ -175,7 +181,14 @@ export function RiskCoverage({
                             title={`${c.name} / ${STRIDE_LABEL[cat]}: ${COVERAGE_LABEL[r.coverage]} · ${t("{n} use cases", { n: r.use_cases.length })}`}
                           >
                             <strong>{r.score ?? "–"}</strong>
-                            <span className="rcov-n">{r.use_cases.length ? t("{n} UC", { n: r.use_cases.length }) : "–"}</span>
+                            <span className="rcov-n">
+                              {r.use_cases.length ? t("{n} UC", { n: r.use_cases.length }) : "–"}
+                              {r.requests.length > 0 && (
+                                <span className="rcov-req" title={t("{n} detection requests", { n: r.requests.length })}>
+                                  {" "}↗{r.requests.length}
+                                </span>
+                              )}
+                            </span>
                           </button>
                         </td>
                       );
@@ -242,6 +255,11 @@ export function RiskCoverage({
                     {COVERAGE_LABEL[r.coverage]}
                   </span>
                   <span className="grow" />
+                  {onRequest && (
+                    <button type="button" className="btn btn-sm" disabled={addDisabled} onClick={() => onRequest(r)}>
+                      {t("+ Detection request")}
+                    </button>
+                  )}
                   {onAdd && (
                     <button type="button" className="btn btn-sm" disabled={addDisabled} onClick={() => onAdd(r)}>
                       {t("+ Use case")}
@@ -267,6 +285,16 @@ export function RiskCoverage({
                         {u.level === "L3" && u.l2_code && <span className="small muted">{t("in {code}", { code: u.l2_code })}</span>}
                         <span className={`uc-state uc-${u.state}`}>{detectionLabel(u.detection, u.level, u.deleted)}</span>
                         {showWeight && <span className="small muted">{t("weight {w}", { w: num(u.weight) })}</span>}
+                        {onUseCase && !u.deleted && (
+                          <button
+                            type="button"
+                            className="link-btn small"
+                            aria-label={t("Details of {code}", { code: u.code })}
+                            onClick={() => onUseCase(u)}
+                          >
+                            {t("Details")}
+                          </button>
+                        )}
                         {onRemove && (
                           <button
                             type="button"
@@ -285,7 +313,7 @@ export function RiskCoverage({
                 ) : (
                   <p className="small muted" style={{ margin: 0 }}>
                     {r.coverage === "unrated"
-                      ? t("Not rated yet: add likelihood and impact in step 2.")
+                      ? t("Not rated yet: add likelihood and impact in step 3.")
                       : r.above_threshold
                         ? t("No use case addresses this risk.")
                         : t("No use case chosen (below the threshold).")}
