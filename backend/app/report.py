@@ -47,6 +47,35 @@ _CODE = re.compile(r"`([^`]+)`")
 _ITALIC = re.compile(r"(?<![*\w])[*_]([^*_\n]+)[*_](?![*\w])")
 
 
+_FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+
+
+def md_blocks(src: str) -> list[tuple[bool, str]]:
+    """Splits Markdown into (is_code, text) parts at fenced code blocks (``` or ~~~).
+    An unclosed fence runs to the end, as in the app."""
+    parts: list[tuple[bool, str]] = []
+    buf: list[str] = []
+    fence = ""
+    for line in str(src).splitlines():
+        m = _FENCE.match(line)
+        if not fence and m:
+            parts.append((False, "\n".join(buf)))
+            buf, fence = [], m.group(1)
+        elif (
+            fence
+            and m
+            and m.group(1)[0] == fence[0]
+            and len(m.group(1)) >= len(fence)
+            and not line.strip()[len(m.group(1)) :].strip()
+        ):
+            parts.append((True, "\n".join(buf)))
+            buf, fence = [], ""
+        else:
+            buf.append(line)
+    parts.append((bool(fence), "\n".join(buf)))
+    return [(c, p) for c, p in parts if c or p.strip()]
+
+
 def md_text(src: str) -> str:
     """Markdown (as typed in the app) to the small markup fpdf2 understands: **bold** stays,
     lists get bullets, headings become bold lines, links show their address, other markers go
@@ -130,12 +159,37 @@ class Report(FPDF):
         self.multi_cell(0, 4.8, _t(text), align="L", new_x="LMARGIN", new_y="NEXT")
 
     def md(self, text: str, size: float = 9.5, color=INK2) -> None:
-        """A paragraph of Markdown text from the app (bold, lists, links)."""
+        """A paragraph of Markdown text from the app (bold, lists, links). Fenced code blocks
+        (```) are printed as they are, on a grey box (#84)."""
+        for is_code, part in md_blocks(text):
+            if is_code:
+                self.code(part, size=max(7.0, size - 1.5))
+                continue
+            if not part.strip():
+                continue
+            self.set_font("Helvetica", "", size)
+            self.set_text_color(*color)
+            self.multi_cell(
+                0, 4.8, md_text(part), align="L", new_x="LMARGIN", new_y="NEXT", markdown=True
+            )
+
+    def code(self, text: str, size: float = 8) -> None:
+        """A code block: the text unchanged (no Markdown), on a grey box."""
         self.set_font("Helvetica", "", size)
-        self.set_text_color(*color)
+        self.set_text_color(*INK)
+        self.set_fill_color(*TRACK)
+        self.ln(0.8)
         self.multi_cell(
-            0, 4.8, md_text(text), align="L", new_x="LMARGIN", new_y="NEXT", markdown=True
+            0,
+            size * 0.48,
+            _t(text.rstrip("\n") or " "),
+            align="L",
+            fill=True,
+            padding=1.5,
+            new_x="LMARGIN",
+            new_y="NEXT",
         )
+        self.ln(0.8)
 
     def bar(
         self, x: float, y: float, w: float, v: float | None, color=DATA1, h: float = 2.2

@@ -1788,5 +1788,7 @@
   "{n} of 6 questions answered": "{n} van 6 vragen beantwoord",
   "{n} threats": "{n} dreigingen",
   "↑ Likelihood · Impact →": "↑ Waarschijnlijkheid · Impact →",
-  "No rule yet": "Nog geen regel"
+  "No rule yet": "Nog geen regel",
+  "Copy failed": "Kopiëren mislukt",
+  "Markdown: **bold**, lists, links, `code` and code blocks between ``` lines (e.g. ```kql)": "Markdown: **vet**, lijsten, links, `code` en codeblokken tussen ```-regels (bijv. ```kql)"
 }

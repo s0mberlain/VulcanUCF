@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, REQUEST_STATUSES, type RequestState, type RequestStatus } from "../api";
 import { t } from "../i18n";
 import { fmtTime } from "../lib/format";
+import { Markdown } from "./Markdown";
 import { ErrorNote, Modal } from "./ui";
 
 /** Detection request status (PROJ-1): chip, details and the dialog that changes it. */
@@ -196,10 +197,10 @@ export function RequestCard({
         (long ? (
           <details className="req-more">
             <summary className="small">{t("Description")}</summary>
-            <p className="req-desc small">{r.description}</p>
+            <Markdown text={r.description} className="req-desc small" />
           </details>
         ) : (
-          <p className="req-desc small">{r.description}</p>
+          <Markdown text={r.description} className="req-desc small" />
         ))}
       <StatusDetails r={r} />
       {(canSetStatus || actions) && (

@@ -1639,6 +1639,9 @@ function TechniquePicker({
   );
 }
 
+/** Hint below a request description: code blocks keep queries and log samples readable (#84). */
+const REQUEST_MD_HINT = () => t("Markdown: **bold**, lists, links, `code` and code blocks between ``` lines (e.g. ```kql)");
+
 /** Edit title, description and threat of a detection request in a draft (PROJ-1). */
 function RequestEditDialog({
   r,
@@ -1681,10 +1684,14 @@ function RequestEditDialog({
             ))}
           </select>
         </label>
-        <label className="field">
-          {t("Description (what should be detected and why)")}
-          <textarea className="textarea" rows={5} value={description} maxLength={10000} onChange={(e) => setDescription(e.target.value)} />
-        </label>
+        <MarkdownField
+          label={t("Description (what should be detected and why)")}
+          value={description}
+          onChange={setDescription}
+          rows={8}
+          maxLength={10000}
+          hint={REQUEST_MD_HINT()}
+        />
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
             {t("Cancel")}
@@ -2277,16 +2284,16 @@ function StepProposals({
                 ))}
               </select>
             </label>
-            <label className="field req-wide">
-              {t("Description (what should be detected and why)")}
-              <textarea
-                className="textarea"
-                rows={3}
+            <div className="req-wide">
+              <MarkdownField
+                label={t("Description (what should be detected and why)")}
                 value={request.description}
+                onChange={(description) => setRequest((r) => ({ ...r, description }))}
+                rows={4}
                 maxLength={10000}
-                onChange={(e) => setRequest((r) => ({ ...r, description: e.target.value }))}
+                hint={REQUEST_MD_HINT()}
               />
-            </label>
+            </div>
             <button type="submit" className="btn btn-primary" disabled={busy || !request.title.trim() || !request.threat}>
               {t("Add")}
             </button>

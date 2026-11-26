@@ -520,8 +520,15 @@ and **By use case**. A cell with ↗ and a number has that many detection reques
 that applies**, also when use cases already cover it, and a threat can have **several** requests:
 
 1. Click **+ Detection request** on the risk, or use the form under *Detection requests*.
-2. Enter what the SOC should detect, choose the threat and, optionally, describe why.
+2. Enter what the SOC should detect, choose the threat (STRIDE or one of your ATT&CK threats) and,
+   optionally, describe why.
 3. Click **Save**. Requests can be edited or removed until the interview is completed.
+
+The description is **Markdown**: bold, lists, links and `code`. Put queries, log samples or
+indicators between two lines of three backticks to show them as a **code block**; add the language
+after the first backticks (for example `` ```kql `` or `` ```spl ``) to label it. *Preview* shows
+the result while you write. Code blocks get a **Copy** button wherever the request is shown and
+are printed unchanged in the interview PDF.
 
 Click **Details** next to a use case to open its [details](#use-case-details).
 

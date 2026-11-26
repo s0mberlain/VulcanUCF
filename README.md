@@ -216,7 +216,8 @@ business owner, criticality, detection coverage, gaps and interview status.
   below threshold; the system page lists the gaps (use cases without rules, rules that get none of
   their log sources).
 - **Detection requests** can be added to any threat that applies, also where use cases already
-  cover it, and a threat can have several.
+  cover it, and a threat can have several. Their description is Markdown with code blocks
+  (language label and copy button) for queries and log samples.
 - The last step gives an **overview** before completing: the matrix with a risk map, a **use case
   board** (detects today, log sources missing, no active rule, detection requests) and a threat
   list. A **use case details** panel shows the rules, their lifecycle status and last
