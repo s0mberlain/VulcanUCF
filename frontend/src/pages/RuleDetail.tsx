@@ -56,6 +56,18 @@ interface Form {
   comments: string;
 }
 
+const ATTACK_ID = /^T\d{4}(\.\d{3})?$/;
+
+/** ATT&CK IDs from the text field: separated by ",", ";" or spaces, e.g. "T1003,T1059.001" (#87). */
+export function parseAttackIds(text: string): { ids: string[]; invalid: string[] } {
+  const tokens = text
+    .split(/[\s,;]+/)
+    .map((x) => x.trim().toUpperCase())
+    .filter(Boolean);
+  const ids = [...new Set(tokens.filter((x) => ATTACK_ID.test(x)))];
+  return { ids, invalid: tokens.filter((x) => !ATTACK_ID.test(x)) };
+}
+
 function toForm(r: L3): Form {
   return {
     name: r.name,
@@ -116,7 +128,11 @@ export default function RuleDetail() {
   useEffect(() => {
     if (!rule.data) return;
     const next = toForm(rule.data);
-    setForm((f) => (f && base.current !== null && JSON.stringify(f) !== base.current ? f : next));
+    // read the ref now: the updater runs on the next render, after base.current is set below.
+    // Reading it there made a save never take over the stored values, so a value the server
+    // normalises ("T1,T2" -> "T1, T2", trimmed name) stayed "unsaved" forever (issues #77, #87).
+    const prev = base.current;
+    setForm((f) => (f && prev !== null && JSON.stringify(f) !== prev ? f : next));
     base.current = JSON.stringify(next);
   }, [rule.data]);
   useEffect(() => {
@@ -142,6 +158,7 @@ export default function RuleDetail() {
   const weight = assessed ? e * i * c : null;
   const potential = assessed ? e - weight! : null;
   const dirty = isDirty;
+  const attackInvalid = parseAttackIds(form.attack).invalid;
   const discard = () => {
     setForm(toForm(r));
     setError(null);
@@ -151,6 +168,15 @@ export default function RuleDetail() {
   async function save(ev: FormEvent) {
     ev.preventDefault();
     if (!form) return;
+    const attack = parseAttackIds(form.attack);
+    if (attack.invalid.length) {
+      setError(
+        t("Not an ATT&CK technique ID: {ids}. Use IDs like T1059 or T1059.001, separated by , or ;", {
+          ids: attack.invalid.join(", "),
+        }),
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -163,10 +189,7 @@ export default function RuleDetail() {
         log_sources: form.log_sources,
         detection_technologies: form.detection_technologies,
         scopes: form.scopes,
-        attack_techniques: form.attack
-          .split(/[\s,;]+/)
-          .map((tt) => tt.trim().toUpperCase())
-          .filter(Boolean),
+        attack_techniques: attack.ids,
         siem_rule_ids: form.siem
           .split(/[;\n]+/)
           .map((x) => x.trim())
@@ -540,12 +563,21 @@ export default function RuleDetail() {
                 <label className="field">
                   {t("ATT&CK techniques")}
                   <input
-                    className="input mono"
+                    className={"input mono" + (attackInvalid.length ? " is-invalid" : "")}
                     placeholder="T1003, T1059.001"
                     disabled={!editor}
                     value={form.attack}
+                    aria-invalid={attackInvalid.length > 0}
+                    aria-describedby={attackInvalid.length ? "rule-attack-error" : undefined}
                     onChange={(ev) => set({ attack: ev.target.value })}
                   />
+                  {attackInvalid.length > 0 && (
+                    <span id="rule-attack-error" className="field-error">
+                      {t("Not an ATT&CK technique ID: {ids}. Use IDs like T1059 or T1059.001, separated by , or ;", {
+                        ids: attackInvalid.join(", "),
+                      })}
+                    </span>
+                  )}
                 </label>
                 <label className="field">
                   {t("SIEM rule IDs")}

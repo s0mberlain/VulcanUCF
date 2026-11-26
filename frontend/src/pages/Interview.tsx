@@ -1570,15 +1570,23 @@ function TechniquePicker({
   const [error, setError] = useState<string | null>(null);
   const listId = "attack-techniques";
   function addDraft(raw = draft) {
-    // accepts "T1110.003" or the datalist text "T1110.003 Password Spraying"
-    const id = raw.trim().split(/\s+/)[0]?.toUpperCase() ?? "";
-    if (!id) return;
-    if (names.size && !names.has(id)) {
-      setError(t("Unknown ATT&CK technique {id}", { id }));
+    const text = raw.trim();
+    // the datalist text "T1110.003 Password Spraying" adds that one technique; otherwise the
+    // draft may list several IDs separated by ",", ";" or spaces, e.g. "T1059,T1078" (#87)
+    const first = text.split(/\s+/)[0]?.toUpperCase() ?? "";
+    const ids =
+      names.has(first) && text === `${first} ${names.get(first)}`
+        ? [first]
+        : [...new Set(text.split(/[\s,;]+/).map((x) => x.toUpperCase()).filter(Boolean))];
+    if (!ids.length) return;
+    const unknown = ids.filter((id) => !/^T\d{4}(\.\d{3})?$/.test(id) || (names.size > 0 && !names.has(id)));
+    if (unknown.length) {
+      setError(t("Unknown ATT&CK technique {id}", { id: unknown.join(", ") }));
       return;
     }
     setError(null);
-    if (!value.includes(id)) onChange([...value, id]);
+    const added = ids.filter((id) => !value.includes(id));
+    if (added.length) onChange([...value, ...added]);
     setDraft("");
   }
   return (

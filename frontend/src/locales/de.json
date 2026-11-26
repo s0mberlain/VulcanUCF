@@ -1790,5 +1790,6 @@
   "↑ Likelihood · Impact →": "↑ Wahrscheinlichkeit · Auswirkung →",
   "No rule yet": "Noch keine Regel",
   "Copy failed": "Kopieren fehlgeschlagen",
-  "Markdown: **bold**, lists, links, `code` and code blocks between ``` lines (e.g. ```kql)": "Markdown: **fett**, Listen, Links, `Code` und Codeblöcke zwischen ```-Zeilen (z. B. ```kql)"
+  "Markdown: **bold**, lists, links, `code` and code blocks between ``` lines (e.g. ```kql)": "Markdown: **fett**, Listen, Links, `Code` und Codeblöcke zwischen ```-Zeilen (z. B. ```kql)",
+  "Not an ATT&CK technique ID: {ids}. Use IDs like T1059 or T1059.001, separated by , or ;": "Keine ATT&CK-Technik-ID: {ids}. Verwenden Sie IDs wie T1059 oder T1059.001, getrennt durch , oder ;"
 }

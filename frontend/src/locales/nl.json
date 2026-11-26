@@ -1790,5 +1790,6 @@
   "↑ Likelihood · Impact →": "↑ Waarschijnlijkheid · Impact →",
   "No rule yet": "Nog geen regel",
   "Copy failed": "Kopiëren mislukt",
-  "Markdown: **bold**, lists, links, `code` and code blocks between ``` lines (e.g. ```kql)": "Markdown: **vet**, lijsten, links, `code` en codeblokken tussen ```-regels (bijv. ```kql)"
+  "Markdown: **bold**, lists, links, `code` and code blocks between ``` lines (e.g. ```kql)": "Markdown: **vet**, lijsten, links, `code` en codeblokken tussen ```-regels (bijv. ```kql)",
+  "Not an ATT&CK technique ID: {ids}. Use IDs like T1059 or T1059.001, separated by , or ;": "Geen ATT&CK-techniek-ID: {ids}. Gebruik ID's zoals T1059 of T1059.001, gescheiden door , of ;"
 }
