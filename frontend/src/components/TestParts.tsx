@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   api,
@@ -164,6 +164,27 @@ interface DefForm {
 
 const emptyDef = (): DefForm => ({ title: "", technique: "", description: "", procedure: "", tools: "", prerequisites: "", expected_detection: "", template_id: null });
 
+/** Must live at module level: a component defined inside another component's
+ *  render is a new type on every render, so React would remount its children
+ *  (and drop input focus) on each keystroke. */
+function MoreDetails({ hasContent, children }: { hasContent: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(hasContent);
+  // open it when content arrives from outside (a template is picked), never close it on the user
+  useEffect(() => {
+    if (hasContent) setOpen(true);
+  }, [hasContent]);
+  return (
+    <details className="more-details" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>{t("More details: description, procedure, tools")}</summary>
+      <div className="stack-sm">{children}</div>
+    </details>
+  );
+}
+
+function PlainGroup({ children }: { hasContent: boolean; children: ReactNode }) {
+  return <>{children}</>;
+}
+
 function DefinitionFields({
   form,
   set,
@@ -176,12 +197,8 @@ function DefinitionFields({
   /** keep description, procedure and the rest behind one disclosure */
   compact?: boolean;
 }) {
-  const More = compact ? ({ children }: { children: ReactNode }) => (
-    <details className="more-details" open={!!(form.description || form.procedure || form.tools || form.expected_detection || form.prerequisites)}>
-      <summary>{t("More details: description, procedure, tools")}</summary>
-      <div className="stack-sm">{children}</div>
-    </details>
-  ) : ({ children }: { children: ReactNode }) => <>{children}</>;
+  const hasDetails = !!(form.description || form.procedure || form.tools || form.expected_detection || form.prerequisites);
+  const More = compact ? MoreDetails : PlainGroup;
   return (
     <>
       {templates && templates.length > 0 && (
@@ -233,7 +250,7 @@ function DefinitionFields({
           />
         </label>
       </div>
-      <More>
+      <More hasContent={hasDetails}>
       <MarkdownField label={t("Description")} value={form.description} onChange={(v) => set({ description: v })} />
       <label className="field">
         {t("Procedure")}
