@@ -140,7 +140,9 @@ export default function RuleDetail() {
   }, [code]);
 
   const isDirty = !!form && !!rule.data && JSON.stringify(form) !== JSON.stringify(toForm(rule.data));
-  useUnsavedGuard(isDirty);
+  // the configuration editor has its own unsaved text; one guard covers both (one router blocker)
+  const [configDirty, setConfigDirty] = useState(false);
+  useUnsavedGuard(isDirty || configDirty);
   const backup = useDraftBackup(`magma-draft:l3:${code}`, form, isDirty, rule.data?.updated_at ?? null);
 
   if (rule.error) return <ErrorNote error={rule.error} />;
@@ -684,7 +686,7 @@ export default function RuleDetail() {
 
             <OutputPanel code={code} editor={editor} />
 
-            <ConfigPanel level="l3" code={code} editor={editor} />
+            <ConfigPanel level="l3" code={code} editor={editor} onDirtyChange={setConfigDirty} />
           </div>
         </div>
         {editor && dirty && (

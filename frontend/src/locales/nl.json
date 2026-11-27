@@ -1628,6 +1628,7 @@
   "Due date (optional)": "Vervaldatum (optioneel)",
   "Assignee": "Toegewezen aan",
   "Nobody": "Niemand",
+  "{user} (no longer assignable)": "{user} (niet meer toe te wijzen)",
   "me": "ik",
   "Add task": "Taak toevoegen",
   "Reopen {title}": "{title} heropenen",

@@ -61,7 +61,8 @@ export function TaskDialog({
     setError(null);
     const data = { kind, title, body, due_date: due || null, assignee: assignee || null };
     try {
-      if (task) await api.updateTask(task.id, data);
+      // the assignee only when it changed: someone who left or changed role stays assigned
+      if (task) await api.updateTask(task.id, (assignee || null) === task.assignee ? { ...data, assignee: undefined } : data);
       else await api.addTask(level, code, data);
       onSaved();
       onClose();
@@ -99,6 +100,9 @@ export function TaskDialog({
             {t("Assignee")}
             <select className="input" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
               <option value="">{t("Nobody")}</option>
+              {task?.assignee && people.data && !people.data.some((p) => p.username === task.assignee) && (
+                <option value={task.assignee}>{t("{user} (no longer assignable)", { user: task.assignee })}</option>
+              )}
               {(people.data ?? []).map((p) => (
                 <option key={p.username} value={p.username}>
                   {p.display_name ? `${p.display_name} (${p.username})` : p.username}

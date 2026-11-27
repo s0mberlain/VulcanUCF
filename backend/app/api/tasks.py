@@ -207,7 +207,12 @@ def update_task(task_id: int, body: TaskPatch, user: Editor, db: DB) -> TaskOut:
         if k in data and data[k] is None:
             raise HTTPException(422, f"{k} cannot be empty")
     if "assignee" in data:
-        data["assignee"] = _assignable(db, data["assignee"])
+        if (data["assignee"] or None) == t.assignee:
+            # unchanged: keep it, also when that person is no longer active or an analyst, so
+            # the rest of the task can still be edited
+            data["assignee"] = t.assignee
+        else:
+            data["assignee"] = _assignable(db, data["assignee"])
     before = {k: getattr(t, k) for k in data}
     new_status = data.pop("status", None)
     for k, v in data.items():

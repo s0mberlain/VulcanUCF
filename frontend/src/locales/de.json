@@ -1628,6 +1628,7 @@
   "Due date (optional)": "Fällig am (optional)",
   "Assignee": "Zuständig",
   "Nobody": "Niemand",
+  "{user} (no longer assignable)": "{user} (nicht mehr zuweisbar)",
   "me": "ich",
   "Add task": "Aufgabe hinzufügen",
   "Reopen {title}": "{title} wieder öffnen",

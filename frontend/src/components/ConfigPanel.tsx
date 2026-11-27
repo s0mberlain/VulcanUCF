@@ -110,7 +110,18 @@ const TEMPLATE = `{
 }
 `;
 
-export default function ConfigPanel({ level, code, editor }: { level: Level; code: string; editor: boolean }) {
+export default function ConfigPanel({
+  level,
+  code,
+  editor,
+  onDirtyChange,
+}: {
+  level: Level;
+  code: string;
+  editor: boolean;
+  /** Unsaved text in the editor (the untouched template of a new configuration does not count). */
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const state = useLoad(() => api.config(level, code), [level, code]);
   const hist = useLoad(() => api.configHistory(level, code), [level, code]);
   const [tab, setTab] = useState<Tab>("editor");
@@ -128,6 +139,13 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
   const head = state.data?.head ?? null;
   const original = state.data?.content ?? "";
   const dirty = text !== original;
+  // what the editor starts with: the stored content, or the template for a new configuration
+  const initial = state.data ? state.data.content || (editor ? TEMPLATE : "") : text;
+  const unsaved = editor && text !== initial;
+  useEffect(() => {
+    onDirtyChange?.(unsaved);
+  }, [unsaved, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   useEffect(() => {
     if (!state.data) return;

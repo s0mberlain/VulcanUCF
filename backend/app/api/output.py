@@ -332,7 +332,10 @@ async def import_csv(
     except csv.Error:
         dialect = csv.excel
     # only the separator is taken from the guess: its quoting rules break notes with quotes
-    rows = list(csv.reader(io.StringIO(text), delimiter=dialect.delimiter))
+    try:
+        rows = list(csv.reader(io.StringIO(text), delimiter=dialect.delimiter))
+    except csv.Error as e:  # e.g. a field longer than the csv module allows
+        raise HTTPException(422, f"The file cannot be read as CSV: {e}") from None
     if not rows:
         raise HTTPException(422, "The file is empty")
     head = [h.strip().lower() for h in rows[0]]

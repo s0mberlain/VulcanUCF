@@ -1,7 +1,9 @@
 """Systems, business owner interviews and the STRIDE mapping (issue #17, app/interviews.py)."""
 
+import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
@@ -1121,12 +1123,23 @@ def interview_pdf(
     system = _system(db, out.system_id)
     data = interview_report.build(out, system, lang or _lang(user), settings.app_name)
     audit.record_access(db, user, "export", "interview", _key(_interview(db, interview_id)), {})
-    safe = "".join(ch if ch.isalnum() else "-" for ch in out.system_name).strip("-")[:60]
-    name = f"interview-{safe or 'system'}-{out.interview_date.isoformat()}.pdf"
+
+    # headers are Latin-1: an ASCII name for old clients, the full name as filename* (RFC 6266),
+    # so a system called e.g. "Платёжный шлюз" or "Łódź" does not break the download
+    def name_of(keep) -> str:
+        safe = "".join(ch if keep(ch) else "-" for ch in out.system_name)
+        safe = re.sub(r"-{2,}", "-", safe).strip("-")[:60]
+        return f"interview-{safe or 'system'}-{out.interview_date.isoformat()}.pdf"
+
+    ascii_name = name_of(lambda ch: ch.isascii() and ch.isalnum())
+    full_name = name_of(str.isalnum)
     return Response(
         data,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{quote(full_name)}"
+        },
     )
 
 

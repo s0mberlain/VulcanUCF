@@ -249,7 +249,10 @@ export default function Interview() {
   const setAttachments = (list: InterviewAttachment[]) => setIv((x) => (x ? { ...x, attachments: list } : x));
   const canEdit = editor && draft;
 
+  // counts edits, so a save can tell whether the form changed while its request ran
+  const edits = useRef(0);
   const update = (fn: (f: Form) => Form) => {
+    edits.current++;
     setForm((f) => (f ? fn(f) : f));
     setDirty(true);
     if (!conflict) setError(null);
@@ -266,14 +269,22 @@ export default function Interview() {
       return null;
     }
     const body = pruned(next ?? form);
+    // a step 3 action shows its change at once, so typing during the request builds on it
+    if (next) setForm(next);
+    const started = edits.current;
     setBusy(true);
     setError(null);
     try {
       const saved = await api.saveInterview(iv.id, { ...body, expected_version: iv.version });
       setIv(saved);
-      setForm(formOf(saved));
-      setDirty(false);
-      backup.clear();
+      if (edits.current === started) {
+        setForm(formOf(saved));
+        setDirty(false);
+        backup.clear();
+      } else {
+        // typed while the request ran: keep that text, it is not saved yet
+        setDirty(true);
+      }
       setSavedAt(new Date().toISOString());
       return saved;
     } catch (e) {

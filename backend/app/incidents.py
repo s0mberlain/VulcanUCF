@@ -56,6 +56,7 @@ REQUIRED = ("name", "id", "created")
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*[A-Za-z0-9]")
 _DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 _DMY = re.compile(r"^(\d{1,2})[./](\d{1,2})[./](\d{4})")
+_AMPM = re.compile(r"\d\s*[AP]\.?M\.?\b", re.IGNORECASE)
 
 VERDICTS = ("true_positive", "false_positive", "benign", "unknown")
 
@@ -75,14 +76,39 @@ def verdict(classification: str) -> str:
     return "unknown"
 
 
-def parse_created(value: str) -> date:
+def date_order(values: list[str]) -> str:
+    """Order of day and month ("dmy" or "mdy") in the dates of one file that are not ISO.
+
+    A file saved again by a spreadsheet has 18.09.2026 or 18/09/2026, an export with US settings
+    9/18/2026 1:00 PM. A first part above 12 means day first, a second part above 12 month first;
+    without such a date, a time with AM/PM means month first (US), anything else day first.
+    """
+    dmy = mdy = ampm = False
+    for v in values:
+        m = _DMY.match(v.strip())
+        if not m:
+            continue
+        a, b = int(m.group(1)), int(m.group(2))
+        dmy |= a > 12
+        mdy |= b > 12
+        ampm |= bool(_AMPM.search(v))
+    if mdy and not dmy:
+        return "mdy"
+    if dmy:
+        return "dmy"
+    return "mdy" if ampm else "dmy"
+
+
+def parse_created(value: str, order: str = "dmy") -> date:
     v = value.strip()
     m = _DATE.match(v)
     if m:
         return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    m = _DMY.match(v)  # a file saved again by a spreadsheet: 18.09.2026 or 18/09/2026
+    m = _DMY.match(v)
     if m:
-        return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        day, month = (b, a) if order == "mdy" else (a, b)
+        return date(y, month, day)
     raise ValueError(f"'{v[:40]}' is not a date")
 
 
@@ -105,7 +131,10 @@ def read(text: str) -> tuple[list[Row], list[str], int]:
     except csv.Error:
         delim = ","
     rows = csv.reader(io.StringIO(text), delimiter=delim)
-    head = [h.strip().lower() for h in next(rows)]
+    try:
+        head = [h.strip().lower() for h in next(rows)]
+    except csv.Error as e:
+        raise FormatError(f"The file cannot be read as CSV: {e}") from None
     col: dict[str, int] = {}
     for i, h in enumerate(head):
         key = COLUMNS.get(h)
@@ -122,17 +151,20 @@ def read(text: str) -> tuple[list[Row], list[str], int]:
         i = col.get(key)
         return row[i].strip() if i is not None and i < len(row) else ""
 
+    try:
+        body = [(n, row) for n, row in enumerate(rows, start=2) if any(c.strip() for c in row)]
+    except csv.Error as e:  # e.g. a field longer than the csv module allows
+        raise FormatError(f"The file cannot be read as CSV: {e}") from None
+    order = date_order([cell(row, "created") for _, row in body])
     out, problems, total = [], [], 0
-    for n, row in enumerate(rows, start=2):
-        if not any(c.strip() for c in row):
-            continue
+    for n, row in body:
         total += 1
         iid = cell(row, "id")
         if not iid:
             problems.append(f"Row {n}: no incident id")
             continue
         try:
-            created = parse_created(cell(row, "created"))
+            created = parse_created(cell(row, "created"), order)
         except ValueError as e:
             problems.append(f"Row {n}: {e}")
             continue
