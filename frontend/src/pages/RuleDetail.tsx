@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type L3, type RefItem, type RefKind } from "../api";
+import { api, ApiError, type L3, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
@@ -224,7 +224,32 @@ export default function RuleDetail() {
     );
     if (!ok) return;
     try {
-      await api.deleteL3(code);
+      try {
+        await api.deleteL3(code);
+      } catch (err) {
+        const systems = err instanceof ApiError && err.status === 409 ? (err.data as { systems?: string[] })?.systems : null;
+        if (!systems?.length) throw err;
+        const sure = await confirmDialog(
+          t("{code} is linked to {n} systems through their interviews. Deleting it removes these links, and their coverage changes.", {
+            code,
+            n: systems.length,
+          }),
+          {
+            title: t("Rule is linked to systems"),
+            confirmLabel: t("Delete and remove links"),
+            danger: true,
+            body: (
+              <ul className="confirm-list">
+                {systems.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            ),
+          },
+        );
+        if (!sure) return;
+        await api.deleteL3(code, true);
+      }
       flushSync(() => setForm(toForm(r))); // nothing left to save: no "unsaved changes" question
       navigate(`/usecases?l2=${r.l2_code}`);
     } catch (err) {

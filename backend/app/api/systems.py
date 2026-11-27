@@ -23,6 +23,7 @@ from app import attack, audit
 from app import interviews as iv
 from app.api import evidence
 from app.api.deps import DB, SettingsDep
+from app.db import lock_row
 from app.models import (
     DetectionRequestState,
     Interview,
@@ -656,7 +657,8 @@ def _interview_out(db: Session, i: Interview) -> InterviewOut:
     )
 
 
-def _check_version(i: Interview, expected: int) -> None:
+def _check_version(db: Session, i: Interview, expected: int) -> None:
+    lock_row(db, i)  # concurrent saves are checked one after the other (audit L6)
     if expected != i.version:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -969,7 +971,7 @@ def get_interview(interview_id: int, _: Reader, db: DB) -> InterviewOut:
 @router.put("/interviews/{interview_id}", response_model=InterviewOut)
 def save_interview(interview_id: int, body: InterviewSave, user: Editor, db: DB) -> InterviewOut:
     i = _draft(db, interview_id)
-    _check_version(i, body.expected_version)
+    _check_version(db, i, body.expected_version)
     _min_date_check(i, body.interview_date)
     data = _validate_draft(db, body)
     changes = audit.diff(
@@ -1012,7 +1014,7 @@ def delete_interview(interview_id: int, user: Editor, db: DB) -> None:
 @router.post("/interviews/{interview_id}/complete", response_model=InterviewOut)
 def complete_interview(interview_id: int, body: VersionIn, user: Editor, db: DB) -> InterviewOut:
     i = _draft(db, interview_id)
-    _check_version(i, body.expected_version)
+    _check_version(db, i, body.expected_version)
     _min_date_check(i, i.interview_date)
     if i.interview_date > _today() + timedelta(days=1):
         raise HTTPException(422, "The interview date cannot be in the future")

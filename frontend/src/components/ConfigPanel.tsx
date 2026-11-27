@@ -155,13 +155,16 @@ export default function ConfigPanel({
   }, [state.data]);
 
   // debounced JSON check while typing
+  // only the answer for the current text counts: an older, slower one must not overwrite it
+  const checkSeq = useRef(0);
   useEffect(() => {
     if (!editor) return;
+    const n = ++checkSeq.current;
     const tt = setTimeout(() => {
       api
         .validateConfig(text)
-        .then(setCheck)
-        .catch(() => setCheck(null));
+        .then((c) => n === checkSeq.current && setCheck(c))
+        .catch(() => n === checkSeq.current && setCheck(null));
     }, 350);
     return () => clearTimeout(tt);
   }, [text, editor]);

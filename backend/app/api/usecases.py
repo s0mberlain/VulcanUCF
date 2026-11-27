@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app import audit, drivers, lifecycle, priorities, rulename
 from app.api.deps import DB, SettingsDep
+from app.db import lock_row
 from app.interviews import SystemRisks, system_risks
 from app.models import (
     BusinessDriver,
@@ -24,6 +25,7 @@ from app.models import (
     RefKind,
     Role,
     System,
+    SystemLink,
     User,
 )
 from app.schemas import (
@@ -106,12 +108,13 @@ def _compliance_drivers(db: Session, ids: list[int]) -> list[ComplianceDriver]:
     return items
 
 
-def _check_unchanged(obj, data: dict[str, Any]) -> None:
+def _check_unchanged(db: Session, obj, data: dict[str, Any]) -> None:
     """Refuse an edit that started from an older version, so two people working on the same use
     case do not silently overwrite each other (the form sends every field)."""
     expected = data.pop("expected_updated_at", None)
     if expected is None or obj.updated_at is None:
         return
+    lock_row(db, obj)  # concurrent saves are checked one after the other (audit L6)
     if abs((as_utc(obj.updated_at) - as_utc(expected)).total_seconds()) > 0.001:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -443,7 +446,7 @@ def create_l2(body: L2Create, user: Editor, db: DB) -> L2Out:
 def update_l2(code: str, body: L2Update, user: Editor, db: DB) -> L2Out:
     l2 = _by_code(db, L2UseCase, code, "L2 use case")
     data = body.model_dump(exclude_unset=True)
-    _check_unchanged(l2, data)
+    _check_unchanged(db, l2, data)
     old = l2.lifecycle_status
     changes = _set_l2_relations(db, l2, data) | _apply(l2, data, user)
     _status_change(db, l2, old, user)
@@ -579,7 +582,7 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
 def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: SettingsDep) -> L3Out:
     l3 = _by_code(db, L3UseCase, code, "L3 rule")
     data = body.model_dump(exclude_unset=True)
-    _check_unchanged(l3, data)
+    _check_unchanged(db, l3, data)
     old = l3.lifecycle_status
     changes = _set_l3_refs(db, l3, data) | _apply(l3, data, user)
     _status_change(db, l3, old, user)
@@ -588,12 +591,38 @@ def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: Setting
     return _l3_response(db, settings, l3)
 
 
-@router.delete("/l3/{code}", status_code=204)
-def delete_l3(code: str, user: Admin, db: DB) -> None:
+@router.delete("/l3/{code}", status_code=204, response_model=None)
+def delete_l3(
+    code: str,
+    user: Admin,
+    db: DB,
+    confirm: bool = Query(False, description="Also remove the links of systems to this rule"),
+) -> JSONResponse | None:
     l3 = _by_code(db, L3UseCase, code, "L3 rule")
-    audit.record(db, user, "delete", "l3", code)
+    # same as for an L2 (#48): systems linked to this very rule lose the link, so say so first
+    systems = sorted(
+        db.scalars(
+            select(System.name)
+            .join(SystemLink, SystemLink.system_id == System.id)
+            .where(SystemLink.l3_id == l3.id)
+            .distinct()
+        )
+    )
+    if systems and not confirm:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": f"{code} is linked to {len(systems)} systems; "
+                "repeat with confirm=true to remove the links",
+                "systems": systems,
+            },
+        )
+    audit.record(db, user, "delete", "l3", code, {"unlinked_systems": systems} if systems else None)
+    for name in systems:
+        audit.record(db, user, "unlink", "system", name, {"l3": code, "reason": "L3 deleted"})
     db.delete(l3)
     db.commit()
+    return None
 
 
 @router.get("/l3/next-code/{l2_code}")

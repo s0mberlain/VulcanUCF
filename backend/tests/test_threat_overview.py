@@ -204,7 +204,10 @@ def test_completed_interview_has_risks_and_marks_deleted_rules(analyst, admin):
     )
     done = complete(analyst, iv)
     assert done["view"]["risks"][0]["use_cases"][0]["code"] == "AO-ACC-03"
-    assert admin.delete("/api/l3/AO-ACC-03").status_code == 204
+    # a rule linked to a system is deleted only on confirmation (audit L7)
+    r = admin.delete("/api/l3/AO-ACC-03")
+    assert r.status_code == 409 and r.json()["systems"]
+    assert admin.delete("/api/l3/AO-ACC-03?confirm=true").status_code == 204
     again = analyst.get(f"/api/interviews/{iv['id']}").json()
     (p,) = again["view"]["proposals"]
     assert p["deleted"] is True

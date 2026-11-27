@@ -425,6 +425,8 @@ class IncidentChange(BaseModel):
     before: MetricCounts | None
     after: MetricCounts
     changed: bool
+    # a month whose numbers came from elsewhere (entered by hand, CSV, SIEM) is replaced
+    before_source: str | None = None
 
 
 class IgnoredName(BaseModel):

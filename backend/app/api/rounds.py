@@ -38,6 +38,7 @@ from app.api.purple import (
     _test,
     out_test,
 )
+from app.db import lock_row
 from app.models import (
     Campaign,
     CampaignStatus,
@@ -184,10 +185,19 @@ def _event_visible(user: User, t: TestCase, e: TestEvent) -> bool:
     return e.side != "blue" and e.kind not in ("result", "result_changed")
 
 
-def _round_state(r: TestRound) -> str:
-    if purple.round_done(r):
+def _round_state(r: TestRound, blue_ok: bool = True) -> str:
+    # while the blue side is hidden, a round with a result still shows as waiting (audit L8)
+    if r.exec_status == TestStatus.not_executable or (blue_ok and purple.round_done(r)):
         return "done"
     return "waiting" if r.exec_status == TestStatus.executed else "open"
+
+
+def _red_may_open(user: User, t: TestCase, latest: TestRound | None) -> bool:
+    """While the blue side is hidden, the red team opens a new round only after a round it could
+    not execute; after an executed one the blue team decides (it knows the result)."""
+    if not _red(user) or _blue_visible(user, t):
+        return True
+    return latest is None or latest.exec_status == TestStatus.not_executable
 
 
 def _ttd(r: TestRound) -> int | None:
@@ -217,7 +227,7 @@ def out_round(user: User, t: TestCase, r: TestRound) -> RoundOut:
     )
     return RoundOut(
         number=r.number,
-        state=_round_state(r),  # type: ignore[arg-type]
+        state=_round_state(r, blue_ok),  # type: ignore[arg-type]
         opened_by=r.opened_by,
         opened_at=r.opened_at,
         exec_status=r.exec_status,
@@ -288,6 +298,7 @@ def out_detail(db, user: User, t: TestCase, gap_tests: set[int] | None = None) -
         collaboration=(t.campaign.collaboration if t.campaign else None),  # type: ignore[arg-type]
         can_comment=commenting,
         can_open_round=commenting
+        and _red_may_open(user, t, latest)
         and latest is not None
         and purple.round_done(latest)
         and len(t.rounds) < MAX_ROUNDS,
@@ -310,6 +321,8 @@ def apply_red(
     notes: str,
     expected_version: int | None,
 ) -> None:
+    if expected_version is not None:
+        lock_row(db, r)
     if expected_version is not None and expected_version != r.red_version:
         raise _conflict("execution", r.red_by)
     if exec_status == TestStatus.executed and started_at is None:
@@ -353,6 +366,8 @@ def apply_blue(
     notes: str,
     expected_version: int | None,
 ) -> None:
+    if expected_version is not None:
+        lock_row(db, r)
     if expected_version is not None and expected_version != r.blue_version:
         raise _conflict("result", r.blue_by)
     if outcome is not None and r.exec_status != TestStatus.executed:
@@ -422,6 +437,10 @@ def open_round(tid: int, user: Reader, db: DB) -> TestDetail:
     t = _test(db, user, tid)
     _may_write(user, t)
     latest = purple.latest_round(t)
+    if not _red_may_open(user, t, latest):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "In this campaign the blue team opens the next round"
+        )
     if latest is not None and not purple.round_done(latest):
         raise HTTPException(status.HTTP_409_CONFLICT, f"Round {latest.number} is still open")
     if len(t.rounds) >= MAX_ROUNDS:

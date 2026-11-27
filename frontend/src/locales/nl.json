@@ -1792,5 +1792,15 @@
   "No rule yet": "Nog geen regel",
   "Copy failed": "Kopiëren mislukt",
   "Markdown: **bold**, lists, links, `code` and code blocks between ``` lines (e.g. ```kql)": "Markdown: **vet**, lijsten, links, `code` en codeblokken tussen ```-regels (bijv. ```kql)",
-  "Not an ATT&CK technique ID: {ids}. Use IDs like T1059 or T1059.001, separated by , or ;": "Geen ATT&CK-techniek-ID: {ids}. Gebruik ID's zoals T1059 of T1059.001, gescheiden door , of ;"
+  "Not an ATT&CK technique ID: {ids}. Use IDs like T1059 or T1059.001, separated by , or ;": "Geen ATT&CK-techniek-ID: {ids}. Gebruik ID's zoals T1059 of T1059.001, gescheiden door , of ;",
+  "entered by hand": "handmatig ingevoerd",
+  "CSV import": "CSV-import",
+  "SIEM": "SIEM",
+  "demo data": "demogegevens",
+  "{n} months have numbers from another source (entered by hand, CSV or SIEM). The import replaces their alerts, incidents and false positives with the counts from the incidents.": "{n} maanden hebben cijfers uit een andere bron (handmatig, CSV of SIEM). De import vervangt hun alerts, incidenten en false positives door de aantallen uit de incidenten.",
+  "These numbers came from another source and are replaced.": "Deze cijfers komen uit een andere bron en worden vervangen.",
+  "Rule is linked to systems": "Regel is gekoppeld aan systemen",
+  "L2 use case not found": "L2-use case niet gevonden",
+  "Unknown change driver": "Onbekende aanleiding voor de wijziging",
+  "A {from} use case goes back to onboarding first, not straight to {to}": "Een use case met status {from} gaat eerst terug naar onboarding, niet direct naar {to}"
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   api,
@@ -208,6 +208,19 @@ export default function UseCases() {
   const matches = (l2: L2) =>
     (!q || l2.code.toLowerCase().includes(q) || l2.name.toLowerCase().includes(q) || ruleHits.has(l2.code)) &&
     matchesFilters(l2);
+  // the bulk selection follows the search and the filters: a use case they hide is unselected, so
+  // a bulk change only touches what the tree shows (audit L3)
+  // (not while the rules that the search or a rule filter reads are still loading)
+  const settled = !!cat.data && (!searching || !!allRules.data) && (!ruleKind || !!refRules.data);
+  const visibleKey = settled ? cat.data!.l2s.filter(matches).map((x) => x.code).join(",") : null;
+  useEffect(() => {
+    if (visibleKey === null) return;
+    const shown = new Set(visibleKey.split(","));
+    setPicked((p) => {
+      const n = new Set([...p].filter((c) => shown.has(c)));
+      return n.size === p.size ? p : n;
+    });
+  }, [visibleKey]);
 
   /** Link that sets the reference filter and keeps view, drivers and selection. */
   const refLink: RefLink = (kind, name) => {

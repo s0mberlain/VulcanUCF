@@ -3,6 +3,14 @@ import { api, type IncidentReport, type MetricCounts } from "../api";
 import { t } from "../i18n";
 import { ErrorNote, Modal } from "./ui";
 
+/** Where a month's output metrics came from before the import. */
+const SOURCE_LABEL: Record<string, string> = {
+  manual: t("entered by hand"),
+  csv: t("CSV import"),
+  siem: t("SIEM"),
+  demo: t("demo data"),
+};
+
 /** Output metrics from a Microsoft Sentinel / Defender XDR incident export (one row per incident).
  * Check shows what would change; Apply stores it. Incidents of unknown use cases are ignored. */
 export default function IncidentImportCard({ onImported }: { onImported?: () => void }) {
@@ -93,6 +101,9 @@ function IncidentDialog({
   const changed = p.changes.filter((c) => c.changed);
   const rows = showAll ? p.changes : changed;
   const writes = p.created + p.updated;
+  // months whose numbers were entered by hand, imported from a CSV or read from the SIEM
+  const foreign = (c: IncidentReport["changes"][number]) => c.changed && !!c.before_source && c.before_source !== "incidents";
+  const replaced = changed.filter(foreign).length;
 
   async function apply() {
     setBusy(true);
@@ -160,6 +171,11 @@ function IncidentDialog({
                 </label>
               )}
             </div>
+            {replaced > 0 && !result && (
+              <p className="note-box small" role="note">
+                {t("{n} months have numbers from another source (entered by hand, CSV or SIEM). The import replaces their alerts, incidents and false positives with the counts from the incidents.", { n: replaced })}
+              </p>
+            )}
             <div className="remap-list">
               <table className="table table-plain">
                 <thead>
@@ -176,7 +192,14 @@ function IncidentDialog({
                       <td>
                         <span className="mono small">{c.code}</span> <span className="small muted">{c.name}</span>
                       </td>
-                      <td className="mono small">{c.period}</td>
+                      <td className="mono small">
+                        {c.period}
+                        {foreign(c) && (
+                          <span className="pill pill-warn small" title={t("These numbers came from another source and are replaced.")}>
+                            {SOURCE_LABEL[c.before_source!] ?? c.before_source}
+                          </span>
+                        )}
+                      </td>
                       <td className="small">
                         <Counts c={c.before} />
                       </td>

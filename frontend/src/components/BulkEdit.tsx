@@ -14,6 +14,7 @@ import { businessOptions, complianceOptions } from "./Drivers";
 import { DRIVER_TYPE_LABEL, loadMeta } from "./LifecyclePanel";
 import { ErrorNote, Modal, MultiSelect, useLoad } from "./ui";
 import { t } from "../i18n";
+import { translateServer } from "../serverTexts";
 
 export type BulkAction = "fields" | "lifecycle" | "verify";
 
@@ -60,7 +61,7 @@ function Results({ result, onClose }: { result: BulkResult; onClose: () => void 
         <ul className="bulk-failed">
           {failed.map((r) => (
             <li key={r.code}>
-              <span className="mono">{r.code}</span> · {r.error?.replace(`${r.code} `, "")}
+              <span className="mono">{r.code}</span> · {translateServer(r.error ?? "").replace(`${r.code} `, "")}
             </li>
           ))}
         </ul>

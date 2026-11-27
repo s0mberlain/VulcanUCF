@@ -129,3 +129,13 @@ def get_db(request: Request) -> Iterator[Session]:
         yield db
     finally:
         db.close()
+
+
+def lock_row(db: Session, obj) -> None:
+    """Reload `obj` and lock its row until the transaction ends (SELECT ... FOR UPDATE).
+
+    Call it right before an optimistic version check: two requests that arrive together then run
+    the check one after the other, so the second one sees the first one's version and gets its
+    409 instead of silently overwriting it. SQLite has no row locks (writes are serialised) and
+    gets a plain reload."""
+    db.refresh(obj, with_for_update=True)

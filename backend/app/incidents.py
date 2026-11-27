@@ -19,7 +19,8 @@ updated classifications corrects the earlier numbers.
 Matching an incident name to a rule, first hit wins:
 1. the whole name is a rule's L3 code, one of its SIEM rule ids or its SIEM name (issue #50);
 2. a part of the name is a rule's L3 code or SIEM rule id: `FESTO:IA-LNX-01:Password Spray`
-   or `ion:AO-IMP-AZ-01: Suspicious ...` match IA-LNX-01 and AO-IMP-AZ-01;
+   or `ion:AO-IMP-AZ-01: Suspicious ...` match IA-LNX-01 and AO-IMP-AZ-01 (numbers shorter than
+   five digits only as a whole `:` part, not inside the text);
 3. the name starts with a rule's SIEM name (Sentinel appends "involving one user" and the like).
 """
 
@@ -36,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.models import ImportedIncident, L3UseCase, OutputMetric
 
 SOURCE = "incidents"  # OutputMetric.source of recounted months
+MIN_NUMERIC_TOKEN = 5  # shorter numbers inside an incident name are not matched as SIEM rule ids
 
 # header name (lower case) -> key; Sentinel and Defender XDR spell a few of them differently
 COLUMNS = {
@@ -214,6 +216,10 @@ class Matcher:
                 return self.part[p]
         hits: list[L3UseCase] = []
         for tok in _TOKEN.findall(n):
+            # a short number in free text ("42 failed logons") is not a rule id; a numeric id
+            # matches as a whole ":" part above (audit L9)
+            if tok.isdigit() and len(tok) < MIN_NUMERIC_TOKEN:
+                continue
             for r in self.part.get(tok, []):
                 if r not in hits:
                     hits.append(r)
@@ -252,6 +258,8 @@ class Change:
     before: dict | None
     after: dict
     changed: bool
+    # where the numbers of the month came from so far (manual, csv, siem, demo, incidents)
+    before_source: str | None = None
 
 
 @dataclass
@@ -363,7 +371,11 @@ def _recount(db: Session, touched: set[tuple[int, date]], user: str, rep: Report
         after = c.as_dict()
         changed = before != after
         r = rules[key[0]]
-        rep.changes.append(Change(r.code, r.name, f"{key[1]:%Y-%m}", before, after, changed))
+        rep.changes.append(
+            Change(
+                r.code, r.name, f"{key[1]:%Y-%m}", before, after, changed, m.source if m else None
+            )
+        )
         if m is None:
             if not c.alerts:
                 continue

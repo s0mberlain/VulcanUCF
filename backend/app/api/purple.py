@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from app import attack, audit, files, purple
 from app.api.deps import DB, SettingsDep
+from app.db import lock_row
 from app.models import (
     Campaign,
     CampaignStatus,
@@ -86,6 +87,28 @@ def _blue_visible(user: User, t: TestCase) -> bool:
         return True
     c = t.campaign
     return c is not None and (c.status == CampaignStatus.closed or c.collaboration == "open")
+
+
+def _red_owns_open(user: User, t: TestCase) -> bool:
+    """A red team account may change and delete its own test definition until the blue team has a
+    result; while the blue side is hidden (blind campaign) until the test is executed, because
+    the red team must not learn whether a result exists (audit L8)."""
+    if not (_red(user) and t.created_by == user.username and t.created_by_red_team):
+        return False
+    if _blue_visible(user, t):
+        return t.outcome is None
+    return t.exec_status != TestStatus.executed and t.outcome is None
+
+
+def _shown_status(user: User, t: TestCase) -> str:
+    """The test status; while the blue side is hidden, "done" because of a result shows as
+    "waiting" (audit L8)."""
+    s = purple.test_status(t)
+    if s == "done" and not _blue_visible(user, t):
+        r = purple.latest_round(t)
+        if r is not None and r.exec_status == TestStatus.executed:
+            return "waiting"
+    return s
 
 
 def _defaults(settings: SettingsDep) -> int:
@@ -380,7 +403,7 @@ def out_test(
     blue_ok = _blue_visible(user, t)
     running = t.campaign is None or t.campaign.status == CampaignStatus.running
     editable = t.campaign is None or t.campaign.status != CampaignStatus.closed
-    own = red and t.created_by == user.username and t.created_by_red_team
+    own = _red_owns_open(user, t)
     return TestOut(
         id=t.id,
         campaign_id=t.campaign_id,
@@ -412,15 +435,13 @@ def out_test(
         version=t.version,
         red_version=t.red_version,
         blue_version=t.blue_version,
-        status=purple.test_status(t),
+        status=_shown_status(user, t),
         round_count=len(t.rounds),
         open_gaps=1 if gap_tests is not None and t.id in gap_tests and blue_ok else 0,
-        can_edit_definition=editable and (_editor(user) or (own and t.outcome is None)),
+        can_edit_definition=editable and (_editor(user) or own),
         can_record_red=running and (_editor(user) or red) and not user.role == Role.auditor,
         can_record_blue=running and _editor(user),
-        can_delete=editable
-        and t.outcome is None
-        and (_editor(user) or (own and t.outcome is None)),
+        can_delete=editable and t.outcome is None and (_editor(user) or own),
     )
 
 
@@ -848,9 +869,9 @@ def _must_edit_definition(db, user: User, t: TestCase) -> None:
         raise HTTPException(403, "Your role does not allow this action")
     if t.campaign is not None and t.campaign.status == CampaignStatus.closed:
         raise HTTPException(409, "A closed campaign cannot be changed; reopen it first")
-    if _red(user) and not (
-        t.created_by == user.username and t.created_by_red_team and t.outcome is None
-    ):
+    if _red(user) and not _red_owns_open(user, t):
+        if not _blue_visible(user, t):
+            raise HTTPException(403, "You can only change tests you created, until they are run")
         raise HTTPException(
             403, "You can only change tests you created, until the blue team has a result"
         )
@@ -860,6 +881,8 @@ def _must_edit_definition(db, user: User, t: TestCase) -> None:
 def update_test(tid: int, body: TestIn, user: Reader, db: DB, settings: SettingsDep) -> TestOut:
     t = _test(db, user, tid)
     _must_edit_definition(db, user, t)
+    if body.expected_version is not None:
+        lock_row(db, t)
     if body.expected_version is not None and body.expected_version != t.version:
         raise _conflict("definition", t.created_by)
     if _red(user) and body.links:
@@ -882,7 +905,7 @@ def update_test(tid: int, body: TestIn, user: Reader, db: DB, settings: Settings
 def delete_test(tid: int, user: Reader, db: DB, settings: SettingsDep) -> None:
     t = _test(db, user, tid)
     _must_edit_definition(db, user, t)
-    if t.outcome is not None:
+    if t.outcome is not None:  # a red team account was refused above already (no hint)
         raise HTTPException(409, "A test with a result cannot be deleted")
     rules = _rule_ids(t)
     audit.record(db, user, "delete", "test", f"{t.id}: {t.title}")

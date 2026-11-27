@@ -737,7 +737,16 @@ export interface IncidentReport {
   ignored_rows: number;
   ignored: { name: string; count: number }[];
   problems: string[];
-  changes: { code: string; name: string; period: string; before: MetricCounts | null; after: MetricCounts; changed: boolean }[];
+  changes: {
+    code: string;
+    name: string;
+    period: string;
+    before: MetricCounts | null;
+    after: MetricCounts;
+    changed: boolean;
+    /** where the month's numbers came from so far: manual, csv, siem, demo, incidents */
+    before_source?: string | null;
+  }[];
   created: number;
   updated: number;
   unchanged: number;
@@ -1311,7 +1320,9 @@ export const api = {
   l3: (code: string) => request<L3>("GET", `/api/l3/${enc(code)}`),
   createL3: (body: L3Input & { code: string; name: string }) => request<L3>("POST", "/api/l3", body),
   updateL3: (code: string, body: L3Input) => request<L3>("PATCH", `/api/l3/${enc(code)}`, body),
-  deleteL3: (code: string) => request<void>("DELETE", `/api/l3/${enc(code)}`),
+  /** Refused with 409 and `systems` while systems link this rule and confirm is false. */
+  deleteL3: (code: string, confirm = false) =>
+    request<void>("DELETE", `/api/l3/${enc(code)}${confirm ? "?confirm=true" : ""}`),
   nextL3Code: (l2: string) => request<{ code: string }>("GET", `/api/l3/next-code/${enc(l2)}`),
 
   ruleNameSettings: () => request<RuleNameSettings>("GET", "/api/settings/rule-name"),
