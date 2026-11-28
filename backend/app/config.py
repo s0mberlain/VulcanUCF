@@ -90,7 +90,9 @@ class Settings(BaseSettings):
     # Shared secret for POST /api/git/webhook (GitHub, Gitea, GitLab push events). Empty = off.
     git_webhook_secret: str | None = None
 
-    # SSO via OpenID Connect (see app/oidc.py). Enabled when issuer and client id are set.
+    # SSO via OpenID Connect (app/api/oidc.py). Usually set up in the app (Administration →
+    # Single sign-on, app/sso.py); when OIDC_ISSUER is set, these variables apply instead.
+    # Enabled when issuer and client id are set.
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
     oidc_client_secret: str | None = None
@@ -102,7 +104,8 @@ class Settings(BaseSettings):
     # Role for users without a matching group; empty = no access.
     oidc_default_role: str | None = None
     oidc_username_claim: str = "preferred_username"
-    oidc_button_label: str = "Sign in with SSO"
+    # empty = "Sign in with SSO" (or "Sign in with Microsoft") in the user's language
+    oidc_button_label: str = ""
 
     # Largest request body (uploads are capped at 20 MB on their own).
     max_body_mb: int = 25

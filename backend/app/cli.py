@@ -4,7 +4,8 @@ magma migrate                      apply database migrations
 magma demo-data --seed 42          fill the catalogue with generated demo data
 magma db-copy --source URL --target URL [--replace]
                                    copy all data, e.g. SQLite -> PostgreSQL
-magma rotate-secret --old KEY      re-encrypt the TOTP seeds after SECRET_KEY was changed
+magma rotate-secret --old KEY      re-encrypt the TOTP seeds and the SSO client secret after
+                                   SECRET_KEY was changed
 magma reset-password [USER]        set a new password for a local account (default: ADMIN_USER),
                                    unlock it and sign it out; asks for the password, or
                                    --from-env takes ADMIN_PASSWORD; --disable-totp also turns
@@ -36,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     cp.add_argument("--target", required=True, help="target database URL")
     cp.add_argument("--replace", action="store_true", help="delete existing data in the target")
     rot = sub.add_parser(
-        "rotate-secret", help="re-encrypt stored TOTP seeds with the current SECRET_KEY"
+        "rotate-secret", help="re-encrypt stored secrets with the current SECRET_KEY"
     )
     rot.add_argument("--old", required=True, help="the previous SECRET_KEY")
     rp = sub.add_parser(
@@ -66,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         return reset_password(settings, args)
 
     if args.cmd == "rotate-secret":
+        from app import sso
         from app.config import check_secret_key
         from app.totp import reencrypt_all
 
@@ -73,16 +75,20 @@ def main(argv: list[str] | None = None) -> int:
         engine = make_engine(settings.database_url, settings)
         with sessionmaker(bind=engine)() as db:
             done, failed = reencrypt_all(db, args.old, settings.secret_key)
+            sso_done = sso.reencrypt(db, args.old, settings.secret_key)
             db.commit()
         engine.dispose()
         print(f"re-encrypted {done} TOTP secret(s)")
+        if sso_done:
+            print("re-encrypted the SSO client secret")
         if failed:
             print(
                 f"error: {len(failed)} could not be decrypted with --old: {', '.join(failed)}",
                 file=sys.stderr,
             )
-            return 1
-        return 0
+        if sso_done is None:
+            print("error: the SSO client secret could not be decrypted with --old", file=sys.stderr)
+        return 1 if failed or sso_done is None else 0
 
     from app.startup import initialize
 

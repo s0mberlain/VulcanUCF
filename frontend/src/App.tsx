@@ -19,6 +19,7 @@ import RuleDetail from "./pages/RuleDetail";
 import UseCases from "./pages/UseCases";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
+import SsoSettings from "./pages/SsoSettings";
 import Systems from "./pages/Systems";
 import SystemDetail from "./pages/SystemDetail";
 import Interview from "./pages/Interview";
@@ -82,6 +83,14 @@ export default function App() {
             element={
               <RequireAuth roles={["admin"]}>
                 <Settings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="admin/sso"
+            element={
+              <RequireAuth roles={["admin"]}>
+                <SsoSettings />
               </RequireAuth>
             }
           />

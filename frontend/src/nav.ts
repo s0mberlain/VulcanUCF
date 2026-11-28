@@ -55,6 +55,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: t("Integrations"), path: "/integrations", icon: "integrations", group: "admin" },
   { label: t("Audit log"), path: "/audit", icon: "audit", roles: ["admin", "auditor"], group: "manage" },
   { label: t("Users"), path: "/admin/users", icon: "users", roles: ["admin"], group: "manage" },
+  { label: t("Single sign-on"), path: "/admin/sso", icon: "sso", roles: ["admin"], group: "manage" },
   { label: t("Settings"), path: "/settings", icon: "settings", roles: ["admin"], group: "manage" },
 ];
 

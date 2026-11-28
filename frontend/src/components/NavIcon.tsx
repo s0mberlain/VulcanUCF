@@ -21,6 +21,7 @@ const PATHS: Record<string, string> = {
   users: "M9 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M17 4.5a3 3 0 010 6M18 14.3c2.3.5 3.5 2.4 3.5 5.7",
   settings: "M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4h2V5zM9 15v4h2v-4z",
   signout: "M10 4H5v16h5M15 8l4 4-4 4M19 12H9",
+  sso: "M15 4a5 5 0 100 10 5 5 0 000-10zM11.5 12.5L3 21M6.5 17.5l2.5 2.5M9 15l2 2M15.5 8.5h.01",
 };
 
 export type NavIconKey = keyof typeof PATHS;

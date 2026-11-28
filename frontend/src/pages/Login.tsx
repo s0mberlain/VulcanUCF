@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import Logo from "../components/Logo";
 import { useSignInStrike } from "../lib/motion";
+import MicrosoftLogo from "../components/MicrosoftLogo";
 import { t } from "../i18n";
 import LanguageSelect from "../components/LanguageSelect";
 
@@ -120,7 +121,8 @@ export default function Login() {
           )}
           {cfg?.sso_enabled && (
             <a className="btn btn-dark" href={`/api/auth/oidc/login?next=${encodeURIComponent(from)}`}>
-              {cfg.sso_label}
+              {cfg.sso_provider === "entra" && <MicrosoftLogo />}
+              {cfg.sso_label || (cfg.sso_provider === "entra" ? t("Sign in with Microsoft") : t("Sign in with SSO"))}
             </a>
           )}
           {cfg?.sso_enabled && cfg.local_login_enabled && <div className="divider">{t("or with a local account")}</div>}

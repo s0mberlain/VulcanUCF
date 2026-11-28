@@ -337,7 +337,64 @@ export interface LinkedUseCase {
 export interface AuthConfig {
   local_login_enabled: boolean;
   sso_enabled: boolean;
+  /** empty: the login page names the button after the provider */
   sso_label: string;
+  sso_provider: SsoProvider;
+}
+
+/** Single sign-on set up in the app (backend/app/sso.py, api/sso_settings.py). */
+export type SsoProvider = "entra" | "oidc";
+export type SsoRole = "admin" | "analyst" | "auditor";
+export interface SsoRoleMapping {
+  value: string;
+  role: SsoRole;
+}
+export interface SsoSettings {
+  enabled: boolean;
+  provider: SsoProvider;
+  tenant_id: string;
+  issuer: string;
+  client_id: string;
+  scopes: string;
+  role_claim: string;
+  role_map: SsoRoleMapping[];
+  default_role: SsoRole | null;
+  username_claim: string;
+  button_label: string;
+}
+export interface SsoSettingsOut extends SsoSettings {
+  /** env: set with the OIDC_* variables and read-only here */
+  source: "env" | "app";
+  client_secret_status: "set" | "unset" | "unreadable";
+  redirect_uri: string;
+  login_url: string;
+  base_url: string;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+/** client_secret: undefined/null keeps the stored one, "" removes it */
+export type SsoSettingsIn = SsoSettings & { client_secret?: string | null };
+export interface SsoCheckItem {
+  key: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+  params: Record<string, string>;
+}
+export interface SsoTestResult {
+  at: string;
+  by: string;
+  ok: boolean;
+  error: string | null;
+  detail: string;
+  issuer: string;
+  role_claim: string;
+  claims: Record<string, unknown>;
+  groups_from: "token" | "userinfo" | "microsoft_graph" | "none" | null;
+  values: string[];
+  matched: string[];
+  role: SsoRole | null;
+  username: string | null;
+  account: "new" | "existing" | null;
 }
 
 export interface ConfigTag {
@@ -1200,6 +1257,10 @@ export const api = {
   ruleNameSettings: () => request<RuleNameSettings>("GET", "/api/settings/rule-name"),
   saveRuleNameSettings: (body: { format: string; variables: RuleNameVariable[] }) =>
     request<RuleNameSettings>("PUT", "/api/settings/rule-name", body),
+  ssoSettings: () => request<SsoSettingsOut>("GET", "/api/settings/sso"),
+  saveSsoSettings: (body: SsoSettingsIn) => request<SsoSettingsOut>("PUT", "/api/settings/sso", body),
+  checkSso: (body: SsoSettingsIn) => request<SsoCheckItem[]>("POST", "/api/settings/sso/check", body),
+  ssoTestResult: () => request<SsoTestResult | null>("GET", "/api/settings/sso/test"),
 
   refs: (kind: RefKind) => request<RefItem[]>("GET", `/api/references/${kind}`),
   createRef: (kind: RefKind, body: { name: string; description: string }) =>

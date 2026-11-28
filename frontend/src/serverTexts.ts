@@ -112,6 +112,16 @@ const SERVER_MESSAGES = [
   st("The file is empty"),
   st("{name} exists already"),
   st("Atomic test not found"),
+  // Single sign-on settings (backend/app/api/sso_settings.py)
+  st("SSO is set in the environment (OIDC_* variables); change it there"),
+  st("Enter your own tenant ID: common, organizations and consumers let in accounts of any tenant"),
+  st("The tenant ID is a GUID or a domain such as contoso.onmicrosoft.com"),
+  st("The issuer must be an https:// URL"),
+  st("The scopes must include openid"),
+  st("Enter the tenant ID or issuer and the client ID before turning SSO on"),
+  st("Map at least one group or role, or set a default role, before turning SSO on"),
+  st("Enter the tenant ID or issuer and the client ID first"),
+  st("{value} is mapped twice"),
 ];
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

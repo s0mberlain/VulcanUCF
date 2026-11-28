@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import or_, select, update
 
-from app import audit, totp
+from app import audit, sso, totp
 from app.api.deps import DB, SettingsDep
 from app.models import AuthSource, User
 from app.schemas import AuthConfigOut, LoginIn, PasswordChange, UserOut
@@ -31,11 +31,13 @@ _DUMMY_HASH = hash_password("timing-equaliser-not-a-password")
 
 
 @router.get("/config", response_model=AuthConfigOut)
-def auth_config(settings: SettingsDep) -> AuthConfigOut:
+def auth_config(db: DB, settings: SettingsDep) -> AuthConfigOut:
+    cfg = sso.effective(db, settings)
     return AuthConfigOut(
         local_login_enabled=settings.local_login_enabled,
-        sso_enabled=settings.sso_enabled,
-        sso_label=settings.oidc_button_label,
+        sso_enabled=cfg.enabled,
+        sso_label=cfg.button_label,
+        sso_provider=cfg.provider,
     )
 
 

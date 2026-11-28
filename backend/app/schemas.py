@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import (
     AfterValidator,
@@ -113,7 +113,9 @@ class PasswordChange(BaseModel):
 class AuthConfigOut(BaseModel):
     local_login_enabled: bool
     sso_enabled: bool
-    sso_label: str = "Sign in with SSO"
+    # empty: the login page shows "Sign in with Microsoft" / "Sign in with SSO" in its language
+    sso_label: str = ""
+    sso_provider: Literal["entra", "oidc"] = "oidc"
 
 
 # ---------------------------------------------------------------- business layer & references

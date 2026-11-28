@@ -338,15 +338,78 @@ text that starts with `=` is written as text, never as a live formula.
 
 ## Single sign-on (OIDC)
 
-Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `OIDC_ROLE_MAP` (see `.env.example`)
-and register `<BASE_URL>/api/auth/oidc/callback` as redirect URI at your IdP. Users are created on
-first login; their role follows the mapped IdP group on every login, and users without a matching
-group are refused (or get `OIDC_DEFAULT_ROLE`). Local login keeps working unless
-`LOCAL_LOGIN_ENABLED=false`.
+Admins set up SSO in the app under *Administration → Single sign-on*, in four steps:
+
+1. **Information for your IAM team**: the redirect URI (`<BASE_URL>/api/auth/oidc/callback`),
+   flow, scopes and roles the identity provider needs. *Copy as text for a ticket* puts it all
+   into one text for whoever manages your IdP.
+2. **Connection**: *Microsoft Entra ID* needs only the directory (tenant) ID, the application
+   (client) ID and the client secret. *Other OpenID Connect provider* (Keycloak, Okta, ADFS,
+   Authentik …) takes the issuer URL instead. *Check connection* loads the discovery document
+   and signing keys and tries the client ID and secret (with a client credentials request).
+3. **Roles**: map IdP app roles or groups to admin / analyst / auditor. People without a match
+   get no access, or a default role.
+4. **Test and turn on**: *Test sign-in* signs in at the IdP and shows the claims it sends and
+   the role they give, without creating an account (it also works before SSO is turned on).
+   Then tick *Show "Sign in with …" on the sign-in page* and save.
+
+The client secret is stored encrypted with `SECRET_KEY` and never shown again; `magma
+rotate-secret` re-encrypts it together with the TOTP seeds. Users are created on first login and
+their role follows the IdP on every login. Local login keeps working unless
+`LOCAL_LOGIN_ENABLED=false`, so an admin can always get in. Refused sign-ins are logged with the
+reason by `magma.oidc` (`docker compose logs magma`); settings changes and test sign-ins are in
+the audit log.
+
+**Set up in the environment instead.** When `OIDC_ISSUER` is set, the `OIDC_*` variables apply
+(see `.env.example`) and the page only shows them, read-only. That suits setups kept in
+infrastructure code; remove `OIDC_ISSUER` to manage SSO in the app again.
 
 To try it locally: `docker compose --profile keycloak up -d` starts a Keycloak on port 8081 with
 the users alice / bob / carol (admin / analyst / auditor, password `<name>-password`); use the
 Keycloak values from `.env.example`.
+
+### Microsoft Entra ID (Azure AD)
+
+What your IAM team does in the Entra admin center (the page's ticket text lists the same):
+
+1. **Register the app.** *App registrations* → *New registration*. Supported account types:
+   *Accounts in this organizational directory only*. Redirect URI: platform **Web**,
+   `<BASE_URL>/api/auth/oidc/callback`. It must match `BASE_URL` exactly (Entra answers
+   `AADSTS50011` otherwise) and must be `https://` except on `localhost`.
+2. **Client secret.** *Certificates & secrets* → *New client secret*. Its **Value** (not the
+   Secret ID) goes into *Client secret* on the page. Note the expiry date: SSO stops working when
+   it expires.
+3. **Permissions.** *API permissions* needs Microsoft Graph `User.Read` (delegated, there by
+   default). *Grant admin consent* so users are not asked on first sign-in.
+4. **Roles**, one of:
+   - **App roles (recommended).** *App roles* → create one per app role, e.g. with the values
+     `Vulcan.Admin`, `Vulcan.Analyst` and `Vulcan.Auditor` (member type *Users/Groups*). Then
+     *Enterprise applications* → the app → *Users and groups* → assign people or groups to them.
+     They arrive in the `roles` claim with readable names and without a size limit. Assigning
+     groups (rather than single users) needs Entra ID P1 or P2.
+   - **Security groups.** *Token configuration* → *Add groups claim* → *Security groups* (or only
+     *Groups assigned to the application*), ID token: *Group ID*. The `groups` claim holds group
+     **object IDs**, so map those. For users in more than 200 groups Entra leaves the claim out;
+     the app then asks Microsoft Graph (`checkMemberGroups`, needs only `User.Read`) which of the
+     mapped groups they are in.
+5. Optional: *Enterprise applications* → the app → *Properties* → *Assignment required* = *Yes*,
+   so Entra refuses everybody not assigned to the app before they reach it.
+
+The tenant ID can also be a verified domain (`contoso.onmicrosoft.com`). The multi-tenant
+endpoints `common`, `organizations` and `consumers` would let in accounts of any Entra ID tenant,
+so the app refuses them. The user name is the `preferred_username` (usually the UPN, e.g.
+`jana.doe@example.com`); accounts are matched by the token's subject, so a renamed UPN keeps its
+account. The same setup in the environment:
+
+```bash
+BASE_URL=https://vulcan.example.com
+OIDC_ISSUER=https://login.microsoftonline.com/<Directory (tenant) ID>/v2.0
+OIDC_CLIENT_ID=<Application (client) ID>
+OIDC_CLIENT_SECRET=<client secret value>
+OIDC_SCOPES=openid profile email User.Read
+OIDC_ROLE_CLAIM=roles
+OIDC_ROLE_MAP=Vulcan.Admin=admin,Vulcan.Analyst=analyst,Vulcan.Auditor=auditor
+```
 
 ## Two-factor login
 
